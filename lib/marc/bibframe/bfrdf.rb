@@ -1,10 +1,11 @@
 require 'marc'
 require 'rdf'
 require 'linkeddata'
+require 'marc/bibframe/marc-custom'
 require 'marc/bibframe/vocab-bf'
+require 'marc/bibframe/vocab-mads'
 require 'marc/bibframe/constants'
 require 'marc/bibframe/utils'
-require 'marc/bibframe/marc'
 include RDF
 
 module MARC

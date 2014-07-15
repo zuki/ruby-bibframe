@@ -1,6 +1,7 @@
 require 'marc'
 require 'rdf'
 require 'marc/bibframe/vocab-bf'
+require 'marc/bibframe/vocab-mads'
 require 'linkeddata'
 include RDF
 
