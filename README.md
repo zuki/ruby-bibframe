@@ -1,12 +1,12 @@
-# Marc::Bibframe
+# Bibframe
 
-TODO: Write a gem description
+Convert MARC records to Bibframe
 
 ## Installation
 
 Add this line to your application's Gemfile:
 
-    gem 'marc-bibframe'
+    gem 'ruby-bibframe'
 
 And then execute:
 
@@ -14,7 +14,7 @@ And then execute:
 
 Or install it yourself as:
 
-    $ gem install marc-bibframe
+    $ gem install ruby-bibframe
 
 ## Usage
 
@@ -22,7 +22,7 @@ TODO: Write usage instructions here
 
 ## Contributing
 
-1. Fork it ( https://github.com/[my-github-username]/marc-bibframe/fork )
+1. Fork it ( https://github.com/[my-github-username]/ruby-bibframe/fork )
 2. Create your feature branch (`git checkout -b my-new-feature`)
 3. Commit your changes (`git commit -am 'Add some feature'`)
 4. Push to the branch (`git push origin my-new-feature`)
