@@ -1,3 +1,5 @@
+# -*- encoding: utf-8 -*-
+
 require 'marc'
 require 'rdf'
 require 'bibframe/vocab-bf'
@@ -81,11 +83,11 @@ module Bibframe
       end
     end
 
-  	if __FILE__ == $0
-  		reader = MARC::XMLReader.new("/Users/dspace/Sites/marc2bibframe/marc-14290156.xml")
-    	bf = Bibframe::Repository.new(reader)
-    	bf.to_ttl
-  	end
+    if __FILE__ == $0
+      reader = MARC::XMLReader.new("/Users/dspace/Sites/marc2bibframe/marc-14290156.xml")
+      bf = Bibframe::Repository.new(reader)
+      bf.to_ttl
+    end
 
   end
 

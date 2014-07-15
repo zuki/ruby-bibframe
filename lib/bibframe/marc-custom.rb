@@ -1,17 +1,19 @@
+# -*- encoding: utf-8 -*-
+
 require 'marc'
 
 module MARC
 
   class Record
-  	def include_member?(ary)
-  		all_tags = self.tags
-   		if ary.is_a?(Array)
-  			ary.select{|t| all_tags.include?(t)}.size > 0
-  		else
+    def include_member?(ary)
+      all_tags = self.tags
+      if ary.is_a?(Array)
+        ary.select{|t| all_tags.include?(t)}.size > 0
+      else
         raise MARC::Exception.new(),
         "parameter is not Array instance #{ary}"
       end
-  	end
+    end
   end
 
   class DataField
@@ -20,7 +22,7 @@ module MARC
     end
 
     def has_subfields(code)
-    	all_subfields = self.codes
+      all_subfields = self.codes
       if code.is_a? String
         all_subfields.include?(code)
       elsif code.is_a? Array

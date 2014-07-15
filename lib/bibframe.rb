@@ -1,3 +1,5 @@
+# -*- encoding: utf-8 -*-
+
 require 'marc'
 require 'rdf'
 require 'linkeddata'
