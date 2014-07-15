@@ -8,11 +8,14 @@ require 'marc/bibframe/constants'
 require 'marc/bibframe/utils'
 include RDF
 
+
 module MARC
 
 	module Bibframe
 
 	  class BFRDF
+
+	  	include MARC::Bibframe::Utils
 
 	    attr_reader :graph
 
