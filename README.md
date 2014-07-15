@@ -1,29 +1,39 @@
 # Bibframe
 
-Convert MARC records to Bibframe
+[marc2bibframe](https://github.com/lcnetdev/marc2bibframe)のXQueryをRubyに変換した、MARCXMLレコードを[Bibframe](http://www.loc.gov/bibframe/)形式に変換するRubyGem。
 
-## Installation
+## インストール
 
-Add this line to your application's Gemfile:
+以下をアプリケーションのGemfileに追加する:
 
     gem 'ruby-bibframe'
 
-And then execute:
+bundleコマンドを実行する:
 
     $ bundle
 
-Or install it yourself as:
+あるいは、次のコマンドでインストールする:
 
     $ gem install ruby-bibframe
 
-## Usage
+## 利用法
 
-TODO: Write usage instructions here
+````
+require 'marc'
+require 'bibframe'
 
-## Contributing
+reader = MARC::XMLReader.new('/path/to/MARCXML.xml')
+bf = Bibframe::Repository.new(reader)
+bf.to_ttl('/path/to/output.ttl')
+#bf.to_xmlrdf('/path/to/output.rdf')
+#bf.to_nt('/path/to/output.nt')
+#bf.to_nq('/path/to/output.nq')
+#bf.to_json('/path/to/output.json')
+#bf.to_jsonld('/path/to/output.jsonld')
+````
 
-1. Fork it ( https://github.com/[my-github-username]/ruby-bibframe/fork )
-2. Create your feature branch (`git checkout -b my-new-feature`)
-3. Commit your changes (`git commit -am 'Add some feature'`)
-4. Push to the branch (`git push origin my-new-feature`)
-5. Create a new Pull Request
+## TODO
+
+- Testの追加
+- コードのリファイン
+- Bibframeの進捗状況に合わせた改訂
