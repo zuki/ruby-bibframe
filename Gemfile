@@ -1,4 +1,4 @@
 source 'https://rubygems.org'
 
-# Specify your gem's dependencies in marc-bibframe.gemspec
+# Specify your gem's dependencies in bibframe.gemspec
 gemspec
