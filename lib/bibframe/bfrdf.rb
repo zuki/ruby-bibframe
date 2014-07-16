@@ -212,100 +212,99 @@ module Bibframe
     end
 
     def generate_classes(domain, subject)
-      @record.fields(%w(060 061)).each do |field|
-        field.each do |sf|
-          next unless sf.code == 'a'
-          classification = normalize_space(sf.value.split(' ')[0])
-          @graph << [subject, BF.classificationNlm, RDF::URI.new("http://nlm.example.org/classification/#{classification}")]
-        end
-      end
-
-      @record.fields('086').each do |field|
-        next unless field['z']
-        uri_class = get_uri('classification')
-        @graph << [subject, BF.classification, uri_class]
-        @graph << [uri_class, RDF.type, BF.Classification]
-        if field.indicator1 == ' ' && field['2']
-          @graph << [uri_class, BF.classificationScheme, field['2']]
-        elsif field.indicator1 == '0'
-          @graph << [uri_class, BF.classificationScheme, 'SUDOC']
-        elsif field.indicator1 == '1'
-          @graph << [uri_class, BF.classificationScheme, 'Government of Canada classification']
-        end
-        @graph << [uri_class, BF.classificationNumber, field['z']]
-        @graph << [uri_class, BF.classificationStatus, 'canceled/invalid']
-      end
-
-      @record.fields(%w(050 055 070 080 082 083 084 086)).each do |field|
-        field.each do |sf|
-          next unless sf.code == 'a'
-          tag, ind1, ind2 = field.tag, field.indicator1, field.indicator2
-          classification = sf.value
-          if %w(050 055).include?(tag)
-            classification = classification.sub(/(\s+|\.).+$/, '')
-            classification = nil unless VALID_LCC.include?(classification.sub(/\d+/, ''))
+      @record.each do |field|
+        case field.tag
+        when /(060|061)/
+          field.values_of('a') do |value|
+            classification = normalize_space(value.split(' ')[0])
+            @graph << [subject, BF.classificationNlm, RDF::URI.new("http://nlm.example.org/classification/#{classification}")]
           end
-          if classification && (field.codes.size == 1 && field['a']) ||
-             (field.codes().size == 2 && field['b'])
-            property = get_class_property(domain, tag)
-            property = 'classification' unless property
-            case property
-            when 'classificationLcc'
-              @graph << [subject, BF.classificationLcc, RDF::URI.new("http://id.loc.gov/authorities/classification/#{classification}")]
-            when 'classificationDdc'
-              @graph << [subject, BF.classificationDdc, RDF::URI.new("http://dewey.info/class/#{classification}/about")]
+        when '086'
+          next unless field['z']
+          uri_class = get_uri('classification')
+          @graph << [subject, BF.classification, uri_class]
+          @graph << [uri_class, RDF.type, BF.Classification]
+          if field.indicator1 == ' ' && field['2']
+            @graph << [uri_class, BF.classificationScheme, field['2']]
+          elsif field.indicator1 == '0'
+            @graph << [uri_class, BF.classificationScheme, 'SUDOC']
+          elsif field.indicator1 == '1'
+            @graph << [uri_class, BF.classificationScheme, 'Government of Canada classification']
+          end
+          @graph << [uri_class, BF.classificationNumber, field['z']]
+          @graph << [uri_class, BF.classificationStatus, 'canceled/invalid']
+        when /(050|055|070|080|082|083|084|086)/
+          field.each do |sf|
+            next unless sf.code == 'a'
+            tag, ind1, ind2 = field.tag, field.indicator1, field.indicator2
+            classification = sf.value
+            if %w(050 055).include?(tag)
+              classification = classification.sub(/(\s+|\.).+$/, '')
+              classification = nil unless VALID_LCC.include?(classification.sub(/\d+/, ''))
+            end
+            next unless classification
+            if (field.codes.size == 1 && field['a']) ||
+               (field.codes().size == 2 && field['b'])
+              property = get_class_property(domain, tag)
+              property = 'classification' unless property
+              case property
+              when 'classificationLcc'
+                @graph << [subject, BF.classificationLcc, RDF::URI.new("http://id.loc.gov/authorities/classification/#{classification}")]
+              when 'classificationDdc'
+                @graph << [subject, BF.classificationDdc, RDF::URI.new("http://dewey.info/class/#{classification}/about")]
+              else
+                uri_class = get_uri('classification')
+                @graph << [subject, BF[property], uri_class]
+                @graph << [uri_class, RDF.type, BF.Classification]
+                @graph << [uri_class, BF.classificationNumber, classification]
+                scheme = if tag == '086' and ind1 = ' ' && field['2'] then field['2']
+                  elsif tag == '086' and ind1 == '0' then 'SUDOC'
+                  elsif tag == '086' and ind1 == '1' then 'Government of Canada classification'
+                  else property
+                  end
+                @graph << [uri_class, BF.classificationScheme, scheme]
+              end
             else
-              uri_class = get_uri('classification')
-              @graph << [subject, BF[property], uri_class]
-              @graph << [uri_class, RDF.type, BF.Classification]
-              @graph << [uri_class, BF.classificationNumber, classification]
-              scheme = if tag == '086' and ind1 = ' ' && field['2'] then field['2']
-                elsif tag == '086' and ind1 == '0' then 'SUDOC'
-                elsif tag == '086' and ind1 == '1' then 'Government of Canada classification'
-                else property
-                end
-              @graph << [uri_class, BF.classificationScheme, scheme]
-            end
-          elsif classification
-            assigner = if tag == '050' && ind2 == '0' then 'dlc'
-              elsif %w(060 061).include?(tag) then 'dnlm'
-              elsif %w(070 071).include?(tag) then 'dnal'
-              elsif %w(082 083 084).include?(tag) && field['q'] then field['q']
-              else nil
-              end
-            uri_class = get_uri('classification')
-            @graph << [subject, BF.classification, uri_class]
-            @graph << [uri_class, RDF.type, BF.Classification]
-            scheme = case tag
-             when '050' then 'lcc'
-             when '060' then 'nlm'
-             when '080' then 'udc'
-             when '082' then 'ddc'
-             when '084', '086'
-              if field['2'] then field['2'] else nil end
-             else nil
-            end
-            @graph << [uri_class, BF.classificationScheme, scheme] if scheme
-            if %w(082 083).include?(tag) && field['m']
-              if field['m'] == 'a'
-                @graph << [uri_class, BF.classificationDesignation, 'standard']
-              elsif field['m'] == 'b'
-                @graph << [uri_class, BF.classificationDesignation, 'optional']
-              end
-            end
-            @graph << [uri_class, BF.classificationNumber, classification]
-            @graph << [uri_class, BF.label, classification]
-            @graph << [uri_class, BF.classificationAssigner, RDF::URI.new("http://id.loc.gov/vocabulary/organizations/#{assigner}")] if assigner
-            if (%w(080 082 083).include?(tag) && %w(0 1).include?(ind1)) ||
-               (%w(082 083).include?(tag) && field['2'])
-              edition = if %w(080 082 083).include?(tag) && ind1 == '1' then 'abridged'
-                elsif %w(080 082 083).include?(tag) && ind1 == '0' then 'full'
-                elsif %w(082 083).include?(tag) && field['2'] then field['2']
+              assigner = if tag == '050' && ind2 == '0' then 'dlc'
+                elsif %w(060 061).include?(tag) then 'dnlm'
+                elsif %w(070 071).include?(tag) then 'dnal'
+                elsif %w(082 083 084).include?(tag) && field['q'] then field['q']
                 else nil
                 end
-              generate_property_from_text(tag, '', edition, 'classification', uri_class) if edition
+              uri_class = get_uri('classification')
+              @graph << [subject, BF.classification, uri_class]
+              @graph << [uri_class, RDF.type, BF.Classification]
+              scheme = case tag
+               when '050' then 'lcc'
+               when '060' then 'nlm'
+               when '080' then 'udc'
+               when '082', '083' then 'ddc'
+               when '084', '086'
+                if field['2'] then field['2'] else nil end
+               else nil
+              end
+              @graph << [uri_class, BF.classificationScheme, scheme] if scheme
+              if %w(082 083).include?(tag) && field['m']
+                if field['m'] == 'a'
+                  @graph << [uri_class, BF.classificationDesignation, 'standard']
+                elsif field['m'] == 'b'
+                  @graph << [uri_class, BF.classificationDesignation, 'optional']
+                end
+              end
+              @graph << [uri_class, BF.classificationNumber, classification]
+              @graph << [uri_class, BF.label, classification]
+              @graph << [uri_class, BF.classificationAssigner, RDF::URI.new("http://id.loc.gov/vocabulary/organizations/#{assigner}")] if assigner
+              if (%w(080 082 083).include?(tag) && %w(0 1).include?(ind1)) ||
+                 (%w(082 083).include?(tag) && field['2'])
+                edition = if %w(080 082 083).include?(tag) && ind1 == '1' then 'abridged'
+                  elsif %w(080 082 083).include?(tag) && ind1 == '0' then 'full'
+                  elsif %w(082 083).include?(tag) && field['2'] then field['2']
+                  else nil
+                  end
+                generate_property_from_text(tag, '', edition, 'classification', uri_class) if edition
+              end
+              generate_simple_property(field, 'classification', uri_class) if tag == '083'
             end
-            generate_simple_property(field, 'classification', uri_class) if tag == '083'
           end
         end
       end
@@ -313,7 +312,7 @@ module Bibframe
 
     def get_class_property(domain, tag)
       if CLASSES[domain]
-        selected = CLASSES[domain].select{|h| h[:level]=='property' && h[:tag].include?('060')}
+        selected = CLASSES[domain].select{|h| h[:tag].include?(tag)}
         return selected[0][:name] if selected.size > 0
       end
     end

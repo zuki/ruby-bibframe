@@ -60,26 +60,13 @@ module Bibframe
 
   CLASSES = {
     "work" => [
-        {name: "classificationNumber", tag: "(050|051|055|060|061|070|071|080|082|083|084|086)", sfcodes: "a"},
-        {name: "classificationSpanEnd", tag: "083", sfcodes: "c"},
-        {name: "classificationTableSeq", tag: "083", sfcodes: "y"},
-        {name: "classificationTable", tag: "083", sfcodes: "z"},
-        {name: "classificationScheme", tag: "086", sfcodes: "2"},
-        {name: "classificationEdition", tag: "(080|082|083)", ind1: "1"},
-        {name: "classificationEdition", tag: "080|082|083", ind1: "0"},
-        {name: "classificationAssigner", tag: "(050|051|060|061|070|071|082|083|084)"},
-
-        {name: "classificationDesignation", tag: "(082|083)" , sfcodes: "m=a then'standard', m=b then 'optional'"},
-        {name: "classificationStatus", tag: "if " , sfcodes: "z then status=canceled/invalid"},
-        {name: "classificationLcc", tag: "(050|051|052|055|070|071)", sfcodes: "a", level: "property"},
-        {name: "classificationNlm", tag: "(060|061)", sfcodes: "a", level: "property"},
-        {name: "classification", tag: "(084|086)", ind1: " ", sfcodes: "a", level: "property"},
-        {name: "classificationDdc", tag: "083", sfcodes: "a'hyphen'c", level: "property"},
-        {name: "classificationDdc", tag: "082", sfcodes: "a", level: "property"},
-        {name: "classificationUdc", tag: "080", sfcodes: "a+c", level: "property"},
+        {name: "classificationLcc", tag: %w(050 051 052 055 070 071)},
+        {name: "classificationNlm", tag: %w(060 061)},
+        {name: "classification", tag: %w(084 086)},
+        {name: "classificationDdc", tag: %w(082 083)},
+        {name: "classificationUdc", tag: ["080"]},
       ],
-      "Holding" => [
-          {name: "classificationItem", tag: "(050|051|055|060|061|070|071|080|082|083|084|086)", sfcodes: "b"},
+    "Holding" => [
       ]
   }.freeze
 
