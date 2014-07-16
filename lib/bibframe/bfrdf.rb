@@ -21,7 +21,7 @@ module Bibframe
     def initialize(repository, record, baseuri=nil)
       @record = record
       record_id = @record['001'].value.strip
-      record_id += '/' + @record['003'].value.strip.downcase.gsub(/[^a-z]/, '') if @record['003']
+      record_id += '.' + @record['003'].value.strip.downcase.gsub(/[^a-z]/, '') if @record['003']
       @baseuri = baseuri ? baseuri : "http://id.loc.gov/resources/bibs/" + record_id
       @graph = RDF::Graph.new(RDF::URI.new(@baseuri), {data: repository})
       @num = 0
@@ -32,36 +32,38 @@ module Bibframe
       #@baseuri += @record['001'].value
       work = RDF::URI.new(@baseuri)
       @graph << [work, RDF.type, BF.Work]
-      generate_work_type(work)
-      generate_alabel(work)
+      generate_work_type(work)                                # 007, 336, 337
+      generate_alabel(work)                                   # 130  240 (245) 100 110 111
       # generate_alabels_work880(subject) 翻訳形のauthor+title 今のロジックでは難しい
-      generate_dissertation(work)
-      generate_uniform_title(work)
-      generate_names(%w(100 110 111 700 710 711 720), work)
-      generate_title(%w(243 245 247), 'work', work)
-      generate_events(%w(033), work)
-      @record.each do |field|
-        generate_simple_property(field, "work", work)
+      generate_dissertation(work)                             # 502
+      generate_uniform_title(work)                            # 130 (240)
+      generate_names(%w(100 110 111 700 710 711 720), work)   # 100 110 111 700 710 711 720
+      generate_title(%w(243 245 247), 'work', work)           # 243 245 247
+      generate_events(%w(033), work)                          # 033
+      @record.each do |field|                                 # 586 502 306 130 240 730 310 321 522 022
+        generate_simple_property(field, "work", work)         # 130 730 384 243 382 500 046 525 513 710
       end
-      generate_audience_521(work)
-      generate_langs(work)
-      generate_findaids(work)
-      generate_abstract(work)
-      generate_abstract_annotation(work)
-      generate_audience(work)
-      generate_genre('Work', work)
-      generate_cartography(work)
-      generate_subjects(work)
-      generate_gacs(work)
-      generate_classes('work', work)    # generate_work_classes
-      generate_identifiers('work', work)    # generate_work_identifiers
-      generate_complex_notes(work)
-      generate_related_works('work', work)   # generate_work_relates
+      generate_audience_521(work)                             # 521
+      generate_langs(work)                                    # 008, 041
+      generate_findaids(work)                                 # 555
+      generate_abstract(work)                                 # 520
+      generate_abstract_annotation(work)                      # 520
+      generate_audience(work)                                 # 521
+      generate_genre('Work', work)                            # 008
+      generate_cartography(work)                              # 255
+      generate_subjects(work)          # 600 610 611 648 650 651 654 655 656 657 658 662 653 751 752
+      generate_gacs(work)                                     # 043
+      generate_classes('work', work)        # 060 061 086 050 055 070 080 082 083 084 086
+      generate_identifiers('work', work)                      # 022
+      generate_complex_notes(work)                            # 505
+      generate_related_works('work', work)  # 400 410 411 430 440 490 533 534 630 700 710 711 720 730
+                                            # 740 760 762 765 767 770 772 773 774 775 776 777 780 785
+                                            # 786 787 800 810 811 830
       @graph << [work, BF.derivedFrom, RDF::URI.new(@baseuri)]
-      generate_hashtable(work)
-      generate_admin(work)
-      generate_instances(work)
-      @record.fields(%w(856 859)).each do |field|    # generate_instances_from856
+      generate_hashtable(work)              # 130 240 (245) 100 110 111 700 710 711
+      generate_admin(work)                  # 010 005 040 leader
+      generate_instances(work)              # 020
+      @record.fields(%w(856 859)).each do |field|             # 856 859
         generate_bio_links(field, work)
       end
     end
@@ -749,7 +751,7 @@ module Bibframe
 
     def get_instance_types
       types = []
-      cf007 = @record['007'] ? @record['007'][0] : nil
+      cf007 = @record['007'] ? @record['007'].value[0] : nil
       types << INSTANCE_TYPES['cf007'][cf007]
       @record.fields('336').each do |field|
         types << INSTANCE_TYPES['336a'][field['a']]
@@ -1140,7 +1142,7 @@ module Bibframe
       lang_008 = normalize_space(@record['008'].value[35, 3])
       lang_041 = []
       @record.fields('041').each do |field|
-        lang_41 << field.values_of('a')
+        lang_041 << field.values_of('a')
       end
       lang_041 = lang_041.flatten.uniq
 
@@ -1152,14 +1154,14 @@ module Bibframe
       end
 
       @record.fields('041').each do |field|
-        %w(b d e f g h j k m n).each do |code|
-          sbfields = field.subfield.select{|s| s.code == code}
+        field.subfields.each do |sf|
+          next unless %w(b d e f g h j k m n).include?(sf.code)
           uri_lang = get_uri('language')
           @graph << [subject, BF.language, uri_lang]
           @graph << [uri_lang, RDF.type, BF.Language]
-          @graph << [uri_lang, BF.languageOfPartUri, code]
-          sbfields.each do |sbf|
-            @graph << [uri_lang, BF.languageOfPartUri, RDF:URI.new("http://id.loc.gov/vocabulary/languages/#{sbf.value}")]
+          @graph << [uri_lang, BF.resourcePart, LANG_PART[sf.code]] if LANG_PART[sf.code]
+          sf.value.strip.scan(/.{3}/).each do |code|
+            @graph << [uri_lang, BF.languageOfPartUri, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{code}")]
           end
           @graph << [uri_lang, BF.languageSource, field['2']] if field['2']
         end
@@ -1714,11 +1716,10 @@ module Bibframe
       leader6 = @record.leader[6]
       types << RESOURCE_TYPES[:leader][leader6] if RESOURCE_TYPES[:leader].has_key?(leader6)
       if @record['007']
-        @records.fields('007').each do |cf007|
-          code = cf007.value[0]
-          types << RESOURCE_TYPES[:cf007][code] if RESOURCE_TYPES[:cf007].has_key?(code)
-        end
+        code = @record['007'].value
+        types << RESOURCE_TYPES[:cf007][code] if RESOURCE_TYPES[:cf007].has_key?(code)
       end
+
       if @record['336']
         @record.fields['336'].each do |field|
           field.each do |sbfield|
@@ -1841,7 +1842,7 @@ module Bibframe
         else
           target_field.subfields.select{|f| %w(a b c d q).include?(f.code)}.map{|f| f.value}.join(' ')
         end
-        @graph << [resource, BF.authorizedAccessPoint, RDF.Literal.new(clean_string(value), :language => xml_lang.to_sym)]
+        @graph << [resource, BF.authorizedAccessPoint, RDF::Literal.new(clean_string(value), :language => xml_lang.to_sym)]
       when 'title'
         subfs = if %w(245 242 243 246 490 510 630 730 740 830).include?(field.tag)
           %w(a b f h k n p)
@@ -1850,13 +1851,13 @@ module Bibframe
         end
         value = target_field.subfields.select{|f| subfs.include?(f.code)}.map{|f| f.value}.join(' ')
         if set_graph
-          @graph << [resource, BF.titleValue, RDF.Literal.new(clean_title_string(value), :language => xml_lang.to_sym)]
+          @graph << [resource, BF.titleValue, RDF::Literal.new(clean_title_string(value), :language => xml_lang.to_sym)]
         else
-          return RDF.Literal.new(clean_title_string(value), :language => xml_lang.to_sym)
+          return RDF::Literal.new(clean_title_string(value), :language => xml_lang.to_sym)
         end
       when 'subject'
         value = target_field.subfields.reject{|f| f.code == '6'}..map{|f| f.value}.join(' ')
-        @graph << [resource, BF.authorizedAccessPoint, RDF.Literal.new(clean_title_string(value), :language => xml_lang.to_sym)]
+        @graph << [resource, BF.authorizedAccessPoint, RDF::Literal.new(clean_title_string(value), :language => xml_lang.to_sym)]
       when 'place'
         target_field.each do |sbfield|
           next unless sbfield.code == 'a'

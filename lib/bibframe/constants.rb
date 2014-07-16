@@ -140,6 +140,20 @@ module Bibframe
     },
   }.freeze
 
+  LANG_PART = {
+    "a" => "text",
+    "b" => "summary or abstract",
+    "d" => "sung or spoken text",
+    "e" => "librettos",
+    "f" => "table of contents",
+    "g" => "accompanying material other than librettos",
+    "h" => "original",
+    "j" => "subtitles or captions",
+    "k" => "intermediate translations",
+    "m" => "original accompanying materials other than librettos",
+    "n" => "original libretto",
+  }.freeze
+
   MEDIA_TYPES_CODE = {
     "audio"         => "s",
     "computer"      => "c",
