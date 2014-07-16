@@ -1182,11 +1182,18 @@ module Bibframe
       @graph << [subject, resource_role, uri_name]
       @graph << [uri_name, RDF.type, bf_class]
       @graph << [uri_name, BF.label, label]
-      @graph << [uri_name, BF.authorizedAccessPoint, label] unless field.tag == '534'
+      unless field.tag == '534'
+        @graph << [uri_name, BF.authorizedAccessPoint, label]
+        auth_id = getAuthorityID(bf_class.label, label)
+        if auth_id
+          @graph << [uri_name, BF.hasAuthority, RDF::URI.new(auth_id)]
+        else
+          ## TODO これは必要か（mads vocabularyを使用）
+          generate_element_list(label, uri_name)
+        end
+      end
 
       generate_880_label(field, "name", uri_name) if field['6']
-      ## TODO これは必要か（mads vocabularyを使用）
-      generate_element_list(label, uri_name) unless field.tag == '534'
       generate_bio_links(field, uri_name)
     end
 
@@ -1524,6 +1531,8 @@ module Bibframe
       @graph << [subject, BF.subject, uri_subject]
       @graph << [uri_subject, RDF.type, BF[type]]
       @graph << [uri_subject, BF.authorizedAccessPoint, label]
+      auth_id = getAuthorityID(BF[type].label, label)
+      @graph << [uri_subject, BF.hasAuthority, RDF::URI.new(auth_id)] if auth_id
       @graph << [uri_subject, BF.label, label]
       generate_880_label(field, 'subject', uri_subject)
       field.each do |sf|

@@ -20,6 +20,7 @@ module Bibframe
       dcterms: 'http://purl.org/dc/terms/',
       lcsh: 'http://id.loc.gov/authorities/subjects/',
       names: 'http://id.loc.gov/authorities/names/',
+      subjects: 'http://id.loc.gov/authorities/subjects/',
       id: 'http://id.loc.gov/resources/bibs/',
       language: 'http://id.loc.gov/vocabulary/languages/',
       lcc: 'http://id.loc.gov/authorities/classification/'

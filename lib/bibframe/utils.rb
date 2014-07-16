@@ -4,6 +4,9 @@ require 'marc'
 require 'rdf'
 require 'bibframe/marc-custom'
 require 'bibframe/constants'
+require 'net/http'
+require 'uri'
+
 include RDF
 
 module Bibframe
@@ -72,6 +75,32 @@ module Bibframe
 
     def normalize_space(value)
       value.gsub(/\s+/, ' ').strip
+    end
+
+    def getAuthorityID(lname, label)
+      return unless %w(Person Organization Place Meeting Family Topic TemporalConcept).include? lname
+
+      scheme = %w(Topic TemporalConcept).include?(lname) ? 'subjects' : 'names'
+      # URI.escape(str)はobsoluteだが、URI.encode_www_form_component(str)は、空白を'+', カンマを'%2C'に変換する。
+      # これがid.loc.govの検索仕様（空白は'%20', カンマは','）にあわないため、あえてURI.escape(str)を使用
+      label = URI.escape(label.gsub(/¥s+/, ' ').strip)
+      response = getResponse("http://id.loc.gov/authorities/#{scheme}/label/#{label}")
+      if response.is_a? Net::HTTPRedirection
+        response['x-uri']
+      elsif label[-1] == '.'
+        response = getResponse("http://id.loc.gov/authorities/#{scheme}/label/#{label.chop}")
+        if response.is_a? Net::HTTPRedirection
+          response['x-uri']
+        end
+      end
+    end
+
+    def getResponse(url_str)
+      url = URI.parse(url_str)
+      req = Net::HTTP::Get.new(url.path)
+      Net::HTTP.start(url.host, url.port) do |http|
+        http.request(req)
+      end
     end
 
   end # Utils
