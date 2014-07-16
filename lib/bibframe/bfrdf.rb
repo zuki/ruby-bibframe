@@ -49,7 +49,7 @@ module Bibframe
       generate_abstract(work)
       generate_abstract_annotation(work)
       generate_audience(work)
-      generate_genre(work)
+      generate_genre('Work', work)
       generate_cartography(work)
       generate_subjects(work)
       generate_gacs(work)
@@ -481,10 +481,10 @@ module Bibframe
       end
     end
 
-    def generate_genre(subject)
+    def generate_genre(rtype, subject)
       genre = @record['008'].value[23]
-      ## おそらく BF.Categoryでトリプルを作成するようになる
-      if FORMS_OF_ITEMS[genre]
+      # おそらく BF.Categoryでトリプルを作成するようになる
+      if FORMS_OF_ITEMS[genre] && FORMS_OF_ITEMS[genre][:rtype].include?(rtype)
         @graph << [subject, BF.genre, FORMS_OF_ITEMS[genre][:form]]
       end
     end
