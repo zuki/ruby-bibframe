@@ -1354,51 +1354,37 @@ module Bibframe
     end
 
     def generate_related_works(domain, subject)
-      if @record.include_member?(%w(730 740 772))
-        @record.fields(%w(730 740 772)).each do |f|
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(f.tag) && h[:ind2].include?(f.indicator2)}.map{|h| h[:property]}.each do |property|
+      @record.each do |field|
+        next unless %w(400|410|411|430|440|490|533|534|630|700|710|711|720|730|740|760|762|765|767|770|772|773|774|775|776|777|780|785|786|787|800|810|811|830).include?(field.tag)
+        tag, ind2 = field.tag, field.indicator2
+        case tag
+        when /(730|740|772|780|785)/
+          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag) && h[:ind2].include?(ind2)}.map{|h| h[:property]}.each do |property|
+              generate_related_works_graph(field, property, subject)
+            end
+        when '533'
+          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
+            generate_related_reporoduction(field, property, subject)
+          end
+        when /(700|710|711|720)/
+          next unless field['t'] && ind2 == '2'
+          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag) && h[:ind2].include?(ind2)}.map{|h| h[:property]}.each do |property|
+            generate_related_works_graph(field, property, subject)
+          end
+        when /(490|630|830)/
+          next unless field['a']
+          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
             generate_related_works_graph(f, property, subject)
           end
-        end
-      elsif @record.include_member?(%w(533))
-        @record.fields('533').each do |f|
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(f.tag)}.map{|h| h[:property]}.each do |property|
-            generate_related_reporoduction(f, property, subject)
+        when '534'
+          next unless field['f']
+          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
+            generate_related_works_graph(field, property, subject)
           end
-        end
-      elsif @record.include_member?(%w(700 710 711 720))
-        @record.fields(%w(700 710 711 720)).each do |f|
-          next unless f['t'] && f.indicator2 == '2'
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(f.tag) && h[:ind2].include?(f.indicator2)}.map{|h| h[:property]}.each do |property|
-            generate_related_works_graph(f, property, subject)
-          end
-        end
-      elsif @record.include_member?(%w(780 785))
-        @record.fields(%w(780 785)).each do |f|
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(f.tag) && h[:ind2].include?(f.indicator2)}.map{|h| h[:property]}.each do |property|
-            generate_related_works_graph(f, property, subject)
-          end
-        end
-      elsif @record.include_member?(%w(490 630 830))
-        @record.fields(%w(490 630 830)).each do |f|
-          next unless f['a']
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(f.tag)}.map{|h| h[:property]}.each do |property|
-            generate_related_works_graph(f, property, subject)
-          end
-        end
-      elsif @record.include_member?(%w(534))
-        @record.fields(%w(534)).each do |f|
-          next unless f['f']
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(f.tag)}.map{|h| h[:property]}.each do |property|
-            generate_related_works_graph(f, property, subject)
-          end
-        end
-      else
-        @record.each do |f|
-          next if MARC::ControlField.control_tag?(f.tag)
-          next unless f['t'] || f['s']
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(f.tag)}.map{|h| h[:property]}.each do |property|
-            generate_related_works_graph(f, property, subject)
+        else
+          next unless field['t'] || field['s']
+          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
+            generate_related_works_graph(field, property, subject)
           end
         end
       end
@@ -1759,61 +1745,6 @@ module Bibframe
     def generate_work_type(subject)
       get_types.each do |type|
         @graph << [subject, RDF.type, BF[type]]
-      end
-    end
-
-
-    def related_works(subject, type)
-      relations   = type == 'work' ? W2W_RELATIONS   : I2I_RELATIONS
-      #target_tags = type == 'work' ? W2W_TARGET_TAGS : I2I_TARGET_TAGS
-
-      relation.each do |relation|
-        fields = @record.fields(relation[:tag].split('|'))
-        fields.each do |field|
-          if relation[:ind2]
-            ind2s = relation[:ind2].split('|')
-            next unless ind2s.includs? field.ind2
-          end
-          tag = field.tag
-          case tag
-          when '730', '740', '772'
-            generate_related_work(field, relation, subject)
-          when '533'
-            generate_related_reporoduction(field, relation, subject)
-          when '700', '710', '711', '720'
-            if field['t']
-              targets = @record.fields("700|710|711|720|780|785".split('|'))
-              targets.each do |target|
-                next unless target.indicator2 == '2' && relations[:idn2] == '2'
-                target.each do |sbfield|
-                  next unless sbfield.code == 't'
-                  generate_related_work(sbfield, relation, subject)
-                end
-              end
-            end
-          when '780', '785'
-            targets = @record.fields("700|710|711|720|780|785".split('|'))
-            targets.each do |target|
-              next unless target.indicator2 == '2' && relations[:ind2] == '2'
-              generate_related_work(field, relation, subject)
-            end
-          when '490', '630', '830'
-            field.each do |sbfield|
-              next unless sbfield.code == 'a'
-              enerate_related_work(sbfield, relation, subject)
-            end
-          when '534'
-            field.each do |sbfield|
-              next unless sbfield.code == 'f'
-              enerate_related_work(sbfield, relation, subject)
-            end
-          else
-            field.each do |sbfield|
-              next unless sbfield.code == 'f' || sbfield.code == 's'
-              enerate_related_work(sbfield, relation, subject)
-            end
-          end
-        end
       end
     end
 
