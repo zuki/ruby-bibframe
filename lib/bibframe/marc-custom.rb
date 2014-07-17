@@ -1,7 +1,5 @@
 # -*- encoding: utf-8 -*-
 
-require 'marc'
-
 module MARC
 
   class Record

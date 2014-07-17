@@ -1,15 +1,5 @@
 # -*- encoding: utf-8 -*-
 
-require 'marc'
-require 'rdf'
-require 'linkeddata'
-require 'bibframe/marc-custom'
-require 'bibframe/vocab-bf'
-require 'bibframe/vocab-mads'
-require 'bibframe/constants'
-require 'bibframe/utils'
-include RDF
-
 module Bibframe
 
   class BFRDF
@@ -29,6 +19,8 @@ module Bibframe
       @types = []
       parse
     end
+
+    private
 
     def parse
       #@baseuri += @record['001'].value

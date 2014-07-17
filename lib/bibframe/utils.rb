@@ -1,17 +1,10 @@
 # -*- encoding: utf-8 -*-
 
-require 'marc'
-require 'rdf'
-require 'bibframe/marc-custom'
-require 'bibframe/constants'
-require 'net/http'
-require 'uri'
-
-include RDF
-
 module Bibframe
 
   module Utils
+
+    private
 
     def chop_puctuation(value, punc)
       value[-1] == punc ? value.chop : value

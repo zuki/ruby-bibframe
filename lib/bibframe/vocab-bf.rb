@@ -1,6 +1,5 @@
 # -*- encoding: utf-8 -*-
 # This file generated automatically using vocab-fetch from http://bibframe.org/vocab.rdf
-require 'rdf'
 
 module RDF
 

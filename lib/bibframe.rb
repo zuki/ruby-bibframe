@@ -11,3 +11,4 @@ require 'bibframe/repository'
 require 'bibframe/constants'
 require 'bibframe/utils'
 require 'bibframe/bfrdf'
+include RDF

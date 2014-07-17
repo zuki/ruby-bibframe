@@ -1,6 +1,6 @@
 # -*- encoding: utf-8 -*-
 # This file generated automatically using vocab-fetch from http://www.loc.gov/mads/rdf/v1.rdf
-require 'rdf'
+
 module RDF
   class MADS < StrictVocabulary("http://www.loc.gov/mads/rdf/v1#")
 

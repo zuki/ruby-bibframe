@@ -1,12 +1,5 @@
 # -*- encoding: utf-8 -*-
 
-require 'marc'
-require 'rdf'
-require 'bibframe/vocab-bf'
-require 'bibframe/vocab-mads'
-require 'linkeddata'
-include RDF
-
 module Bibframe
 
   class Repository
