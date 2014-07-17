@@ -26,12 +26,13 @@ module Bibframe
       lcc: 'http://id.loc.gov/authorities/classification/'
     }.freeze
 
-    attr_reader :repository
+    attr_reader :repository, :resolve
 
-    def initialize(reader)
+    def initialize(reader, resolve=true)
       @repository = RDF::Repository.new
+      @resovle = resolve
       for record in reader
-        bfrdf = Bibframe::BFRDF.new(@repository, record)
+        bfrdf = Bibframe::BFRDF.new(@repository, record, resolve)
         @repository.insert bfrdf.graph
       end
     end

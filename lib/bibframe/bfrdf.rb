@@ -16,15 +16,16 @@ module Bibframe
 
     include Bibframe::Utils
 
-    attr_reader :graph
+    attr_reader :graph, :resolve, :baseuri
 
-    def initialize(repository, record, baseuri=nil)
+    def initialize(repository, record, resolve=true, baseuri=nil)
       @record = record
       record_id = @record['001'].value.strip
       record_id += '.' + @record['003'].value.strip.downcase.gsub(/[^a-z]/, '') if @record['003']
       @baseuri = baseuri ? baseuri : "http://id.loc.gov/resources/bibs/" + record_id
       @graph = RDF::Graph.new(RDF::URI.new(@baseuri), {data: repository})
       @num = 0
+      @resolve = resolve
       @types = []
       parse
     end
@@ -1177,7 +1178,7 @@ module Bibframe
       @graph << [uri_name, BF.label, label]
       unless field.tag == '534'
         @graph << [uri_name, BF.authorizedAccessPoint, label]
-        auth_id = getAuthorityID(bf_class.label, label)
+        auth_id = resolve ? getAuthorityID(bf_class.label, label) : nil
         if auth_id
           @graph << [uri_name, BF.hasAuthority, RDF::URI.new(auth_id)]
         else
@@ -1505,7 +1506,7 @@ module Bibframe
       @graph << [subject, BF.subject, uri_subject]
       @graph << [uri_subject, RDF.type, BF[type]]
       @graph << [uri_subject, BF.authorizedAccessPoint, label]
-      auth_id = getAuthorityID(BF[type].label, label)
+      auth_id = resolve ? getAuthorityID(BF[type].label, label) : nil
       @graph << [uri_subject, BF.hasAuthority, RDF::URI.new(auth_id)] if auth_id
       @graph << [uri_subject, BF.label, label]
       generate_880_label(field, 'subject', uri_subject)
