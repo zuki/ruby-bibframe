@@ -67,7 +67,7 @@ module Bibframe
 
     def get_uri(type)
       @num += 1
-      RDF::URI.new(@baseuri + type + @num.to_s)
+      RDF::URI.new(@baseuri + '-' + type + @num.to_s)
     end
 
     def handle_cancels(field, sbfield, scheme, subject)
@@ -93,7 +93,7 @@ module Bibframe
         @graph << [resource, BF.systemNumber, RDF::URI.new('http://www.worldcat.org/oclc/'+id)]
       else
         uri_identifier = get_uri('identifier')
-        @graph << [resource, RDF.BF.systemNumber, uri_identifier]
+        @graph << [resource, BF.systemNumber, uri_identifier]
         @graph << [uri_identifier, RDF.type, BF.Identifier]
         @graph << [uri_identifier, BF.identifierValue, sysnum]
       end

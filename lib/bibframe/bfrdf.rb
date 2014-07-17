@@ -11,7 +11,7 @@ module Bibframe
     def initialize(repository, record, resolve=true, baseuri=nil)
       @record = record
       record_id = @record['001'].value.strip
-      record_id += '.' + @record['003'].value.strip.downcase.gsub(/[^a-z]/, '') if @record['003']
+      record_id += '-' + @record['003'].value.strip.downcase.gsub(/[^a-z]/, '') if @record['003']
       @baseuri = baseuri ? baseuri : "http://id.loc.gov/resources/bibs/" + record_id
       @graph = RDF::Graph.new(RDF::URI.new(@baseuri), {data: repository})
       @num = 0
@@ -1356,10 +1356,10 @@ module Bibframe
         RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag) && h[:ind2].include?(ind2)}.map{|h| h[:property]}.each do |property|
           generate_related_works_graph(field, property, subject)
         end
-      when /(490|630|830)/
+      when /(440|490|630|830)/
         return unless field['a']
         RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
-          generate_related_works_graph(f, property, subject)
+          generate_related_works_graph(field, property, subject)
         end
       when '534'
         return unless field['f']
@@ -1502,8 +1502,8 @@ module Bibframe
       @graph << [uri_subject, BF.hasAuthority, RDF::URI.new(auth_id)] if auth_id
       @graph << [uri_subject, BF.label, label]
       generate_880_label(field, 'subject', uri_subject)
-      field.each do |sf|
-        handle_system_number(subfield.value, uri_subject) if sf.code == '0'
+      field.values_of('0').each do |value|
+        handle_system_number(value, uri_subject)
       end
     end
 
@@ -1772,9 +1772,11 @@ module Bibframe
       return unless field['6'] && field['6'].start_with?('880')
 
       target = field.tag + '-' + field['6'].split('-')[1][0, 2]
-      lang = @record['008'].value[35, 3]
       target_field = @record.fields('880').find {|f| f['6'].start_with?(target)}
+      return unless target_field
+
       scr = target_field['6'].split('/')[1]
+      lang = @record['008'].value[35, 3]
       xml_lang = get_xml_lang(scr, lang)
       case node_name
       when 'name'
@@ -1797,7 +1799,7 @@ module Bibframe
           return RDF::Literal.new(clean_title_string(value), :language => xml_lang.to_sym)
         end
       when 'subject'
-        value = target_field.subfields.reject{|f| f.code == '6'}..map{|f| f.value}.join(' ')
+        value = target_field.subfields.reject{|f| f.code == '6'}.map{|f| f.value}.join(' ')
         @graph << [resource, BF.authorizedAccessPoint, RDF::Literal.new(clean_title_string(value), :language => xml_lang.to_sym)]
       when 'place'
         target_field.each do |sbfield|
