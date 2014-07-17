@@ -39,6 +39,39 @@ module Bibframe
                          .gsub(/\[microform\]/i, '').sub(/\/$/, '')
     end
 
+    def get_types
+      return @types if @types.size > 0
+
+      leader6 = @record.leader[6]
+      @types << RESOURCE_TYPES[:leader][leader6] if RESOURCE_TYPES[:leader].has_key?(leader6)
+      if @record['007']
+        code = @record['007'].value
+        @types << RESOURCE_TYPES[:cf007][code] if RESOURCE_TYPES[:cf007].has_key?(code)
+      end
+
+      if @record['336']
+        @record.fields['336'].each do |field|
+          field.each do |sbfield|
+            code = sbfield.code
+            value = sbfield.value.downcase
+            types << RESOURCE_TYPES[:sf336a][value] if code == 'a' && RESOURCE_TYPES[:sf336a].has_key?(value)
+            types << RESOURCE_TYPES[:sf336b][value] if code == 'b' && RESOURCE_TYPES[:sf336b].has_key?(value)
+          end
+        end
+      end
+      if @record['337']
+        @record.fields['337'].each do |field|
+          field.each do |sbfield|
+            code = sbfield.code
+            value = sbfield.value.downcase
+            @types << RESOURCE_TYPES[:sf337a][value] if code == 'a' && RESOURCE_TYPES[:sf337a].has_key?(value)
+            @types << RESOURCE_TYPES[:sf337b][value] if code == 'b' && RESOURCE_TYPES[:sf337b].has_key?(value)
+          end
+        end
+      end
+      @types = @types.flatten.uniq
+    end
+
     def get_uri(type)
       @num += 1
       RDF::URI.new(@baseuri + type + @num.to_s)

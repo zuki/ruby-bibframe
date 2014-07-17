@@ -25,60 +25,74 @@ module Bibframe
       @baseuri = baseuri ? baseuri : "http://id.loc.gov/resources/bibs/" + record_id
       @graph = RDF::Graph.new(RDF::URI.new(@baseuri), {data: repository})
       @num = 0
+      @types = []
       parse
     end
 
     def parse
       #@baseuri += @record['001'].value
       work = RDF::URI.new(@baseuri)
+
+      # フィールドごとに処理できない（その1）
       @graph << [work, RDF.type, BF.Work]
-      generate_work_type(work)                                # 007, 336, 337
-      generate_alabel(work)                                   # 130  240 (245) 100 110 111
+      generate_work_type(work)
+      generate_alabel(work)                              # 130  240 (245) 100 110 111
+      generate_uniform_title(work)
       # generate_alabels_work880(subject) 翻訳形のauthor+title 今のロジックでは難しい
-      generate_dissertation(work)                             # 502
-      generate_uniform_title(work)                            # 130 (240)
-      generate_names(%w(100 110 111 700 710 711 720), work)   # 100 110 111 700 710 711 720
-      generate_title(%w(243 245 247), 'work', work)           # 243 245 247
-      generate_events(%w(033), work)                          # 033
-      @record.each do |field|                                 # 586 502 306 130 240 730 310 321 522 022
-        generate_simple_property(field, "work", work)         # 130 730 384 243 382 500 046 525 513 710
+      generate_langs(work)
+      generate_identifiers('work', work)
+
+      # フィールド毎に処理可能
+      @record.each do |field|
+        case field.tag
+        when '502'
+          generate_dissertation(field, work)
+        when /(100|110|111|700|710|711|720)/
+          generate_names(field, work)
+        when /(243|245|247)/
+          generate_title(field, 'work', work)
+        when '033'
+          generate_events(field, work)
+        when '521'
+          generate_audience_521(field, work)
+        when '555'
+          generate_findaids(field, work)
+        when '520'
+          generate_abstract(field, work)
+        when '008'
+          generate_audience(field, work)
+          generate_genre(field, 'Work', work)
+        when '255'
+          generate_cartography(field, work)
+        when /(600|610|611|648|650|651|654|655|656|657|658|662|653|751|752)/
+          generate_subjects(field, work)
+        when '043'
+          generate_gacs(field, work)
+        when /(060|061|086|050|055|070|080|082|083|084|086)/
+          generate_classes(field, 'work', work)
+        when '505'
+          generate_complex_notes(field, work)
+        when /(400|410|411|430|440|490|533|534|630|700|710|711|720|730|740|760|762|765|767|770|772|773|774|775|776|777|780|785|786|787|800|810|811|830)/
+          generate_related_works(field, 'work', work)
+        when /(856|859)/
+          generate_bio_links(field, work)
+        end
+        # フィールドが設定ファイルで指定されており、独立に処理可能
+        generate_simple_property(field, "work", work)
       end
-      generate_audience_521(work)                             # 521
-      generate_langs(work)                                    # 008, 041
-      generate_findaids(work)                                 # 555
-      generate_abstract(work)                                 # 520
-      generate_abstract_annotation(work)                      # 520
-      generate_audience(work)                                 # 521
-      generate_genre('Work', work)                            # 008
-      generate_cartography(work)                              # 255
-      generate_subjects(work)          # 600 610 611 648 650 651 654 655 656 657 658 662 653 751 752
-      generate_gacs(work)                                     # 043
-      generate_classes('work', work)        # 060 061 086 050 055 070 080 082 083 084 086
-      generate_identifiers('work', work)                      # 022
-      generate_complex_notes(work)                            # 505
-      generate_related_works('work', work)  # 400 410 411 430 440 490 533 534 630 700 710 711 720 730
-                                            # 740 760 762 765 767 770 772 773 774 775 776 777 780 785
-                                            # 786 787 800 810 811 830
+
+      # フィールドごとに処理できない（その2）
       @graph << [work, BF.derivedFrom, RDF::URI.new(@baseuri)]
-      generate_hashtable(work)              # 130 240 (245) 100 110 111 700 710 711
-      generate_admin(work)                  # 010 005 040 leader
-      generate_instances(work)              # 020
-      @record.fields(%w(856 859)).each do |field|             # 856 859
-        generate_bio_links(field, work)
-      end
+      generate_hashtable(work)
+      generate_admin(work)
+      generate_instances(work)
     end
 
-    def generate_abstract(subject)
-      @record.fields('520').each do |field|
-        next if field['c'] || field['u']
-        generate_simple_property(field, 'work', subject)
-      end
-    end
-
-    def generate_abstract_annotation(subject)
-      @record.fields('520').each do |field|
-        next unless field['c'] || field['u']
+    def generate_abstract(field, subject)
+      if field['c'] || field['u']
         generate_abstract_annotation_graph(field, subject)
+      else
+        generate_simple_property(field, 'work', subject)
       end
     end
 
@@ -167,11 +181,11 @@ module Bibframe
       @graph << [subject, BF.authorizedAccessPoint, alabel]
     end
 
-    def generate_audience(subject)
-      audience = @record['008'].value[22]
+    def generate_audience(field, subject)
+      audience = field.value[22]
       type008 = get_type_of_008
-      if audience != ' ' && %w(BK CF MU VM).include?(type008) && TARGET_AUDIENCES[type008]
-        @graph << [subject, BF.intendedAudience, RDF::URI.new("http://id.loc.gov/vocabulary/targetAudiences/#{TARGET_AUDIENCES[type008]}")]
+      if audience != ' ' && %w(BK CF MU VM).include?(type008) && TARGET_AUDIENCES[audience]
+        @graph << [subject, BF.intendedAudience, RDF::URI.new("http://id.loc.gov/vocabulary/targetAudiences/#{TARGET_AUDIENCES[audience]}")]
       end
     end
 
@@ -181,132 +195,126 @@ module Bibframe
       case leader6
       when 'a'
         case leader7
-        when 'a', 'c', 'd', 'm'
+        when /[acdm]/
           'BK'
-        when 'b', 'i', 's'
-        ' SE'
+        when /[bis]/
+          'SE'
         else nil
         end
       when 't' then 'BK'
       when 'p' then 'MM'
       when 'm' then 'CF'
-      when 'e', 'f', 's' then 'MP'
-      when 'g', 'k', 'o', 'r' then 'VM'
-      when 'c', 'd', 'i', 'j' then 'MU'
+      when /[efs]/ then 'MP'
+      when /[gkor]/ then 'VM'
+      when /[cdij]/ then 'MU'
       else nil
       end
     end
 
-    def generate_audience_521(subject)
-      @record.fields('521') do |field|
-        uri_audience = get_uri('audience')
-        @graph << [subject, BF.intendedAudience, uri_audience]
-        @graph << [uri_audience, RDF.type, BF.IntendedAudience]
-        @graph << [uri_audience, BF.audience, field['a']]
-        @graph << [uri_audience, BF.audienceAssigner, field['b']] if field['b']
-      end
+    def generate_audience_521(field, subject)
+      uri_audience = get_uri('audience')
+      @graph << [subject, BF.intendedAudience, uri_audience]
+      @graph << [uri_audience, RDF.type, BF.IntendedAudience]
+      @graph << [uri_audience, BF.audience, field['a']]
+      @graph << [uri_audience, BF.audienceAssigner, field['b']] if field['b']
     end
 
-    def generate_cartography(subject)
-      @record.fields('255').each do |field|
-        generate_simple_property(field, 'cartography', subject)
-      end
+    def generate_cartography(field, subject)
+      generate_simple_property(field, 'cartography', subject)
     end
 
-    def generate_classes(domain, subject)
-      @record.each do |field|
-        case field.tag
-        when /(060|061)/
-          field.values_of('a') do |value|
-            classification = normalize_space(value.split(' ')[0])
-            @graph << [subject, BF.classificationNlm, RDF::URI.new("http://nlm.example.org/classification/#{classification}")]
+    def generate_classes(field, domain, subject)
+      case field.tag
+      when /(060|061)/
+        field.values_of('a') do |value|
+          classification = normalize_space(value.split(' ')[0])
+          @graph << [subject, BF.classificationNlm, RDF::URI.new("http://nlm.example.org/classification/#{classification}")]
+        end
+      when '086'
+        return unless field['z']
+        uri_class = get_uri('classification')
+        @graph << [subject, BF.classification, uri_class]
+        @graph << [uri_class, RDF.type, BF.Classification]
+        if field.indicator1 == ' ' && field['2']
+          @graph << [uri_class, BF.classificationScheme, field['2']]
+        elsif field.indicator1 == '0'
+          @graph << [uri_class, BF.classificationScheme, 'SUDOC']
+        elsif field.indicator1 == '1'
+          @graph << [uri_class, BF.classificationScheme, 'Government of Canada classification']
+        end
+        @graph << [uri_class, BF.classificationNumber, field['z']]
+        @graph << [uri_class, BF.classificationStatus, 'canceled/invalid']
+      when /(050|055|070|080|082|083|084|086)/
+        field.each do |sf|
+          next unless sf.code == 'a'
+          tag, ind1, ind2 = field.tag, field.indicator1, field.indicator2
+          classification = sf.value
+          if %w(050 055).include?(tag)
+            classification = classification.sub(/(\s+|\.).+$/, '')
+            classification = nil unless VALID_LCC.include?(classification.sub(/\d+/, ''))
           end
-        when '086'
-          next unless field['z']
-          uri_class = get_uri('classification')
-          @graph << [subject, BF.classification, uri_class]
-          @graph << [uri_class, RDF.type, BF.Classification]
-          if field.indicator1 == ' ' && field['2']
-            @graph << [uri_class, BF.classificationScheme, field['2']]
-          elsif field.indicator1 == '0'
-            @graph << [uri_class, BF.classificationScheme, 'SUDOC']
-          elsif field.indicator1 == '1'
-            @graph << [uri_class, BF.classificationScheme, 'Government of Canada classification']
-          end
-          @graph << [uri_class, BF.classificationNumber, field['z']]
-          @graph << [uri_class, BF.classificationStatus, 'canceled/invalid']
-        when /(050|055|070|080|082|083|084|086)/
-          field.each do |sf|
-            next unless sf.code == 'a'
-            tag, ind1, ind2 = field.tag, field.indicator1, field.indicator2
-            classification = sf.value
-            if %w(050 055).include?(tag)
-              classification = classification.sub(/(\s+|\.).+$/, '')
-              classification = nil unless VALID_LCC.include?(classification.sub(/\d+/, ''))
-            end
-            next unless classification
-            if (field.codes.size == 1 && field['a']) ||
-               (field.codes().size == 2 && field['b'])
-              property = get_class_property(domain, tag)
-              property = 'classification' unless property
-              case property
-              when 'classificationLcc'
-                @graph << [subject, BF.classificationLcc, RDF::URI.new("http://id.loc.gov/authorities/classification/#{classification}")]
-              when 'classificationDdc'
-                @graph << [subject, BF.classificationDdc, RDF::URI.new("http://dewey.info/class/#{classification}/about")]
-              else
-                uri_class = get_uri('classification')
-                @graph << [subject, BF[property], uri_class]
-                @graph << [uri_class, RDF.type, BF.Classification]
-                @graph << [uri_class, BF.classificationNumber, classification]
-                scheme = if tag == '086' and ind1 = ' ' && field['2'] then field['2']
-                  elsif tag == '086' and ind1 == '0' then 'SUDOC'
-                  elsif tag == '086' and ind1 == '1' then 'Government of Canada classification'
-                  else property
-                  end
-                @graph << [uri_class, BF.classificationScheme, scheme]
-              end
+          next unless classification
+          if (field.codes.size == 1 && field['a']) ||
+             (field.codes().size == 2 && field['b'])
+            property = get_class_property(domain, tag)
+            property = 'classification' unless property
+            case property
+            when 'classificationLcc'
+              @graph << [subject, BF.classificationLcc, RDF::URI.new("http://id.loc.gov/authorities/classification/#{classification}")]
+            when 'classificationDdc'
+              @graph << [subject, BF.classificationDdc, RDF::URI.new("http://dewey.info/class/#{classification}/about")]
             else
-              assigner = if tag == '050' && ind2 == '0' then 'dlc'
-                elsif %w(060 061).include?(tag) then 'dnlm'
-                elsif %w(070 071).include?(tag) then 'dnal'
-                elsif %w(082 083 084).include?(tag) && field['q'] then field['q']
+              uri_class = get_uri('classification')
+              @graph << [subject, BF[property], uri_class]
+              @graph << [uri_class, RDF.type, BF.Classification]
+              @graph << [uri_class, BF.classificationNumber, classification]
+              scheme = if tag == '086' and ind1 = ' ' && field['2'] then field['2']
+                elsif tag == '086' and ind1 == '0' then 'SUDOC'
+                elsif tag == '086' and ind1 == '1' then 'Government of Canada classification'
+                else property
+                end
+              @graph << [uri_class, BF.classificationScheme, scheme]
+            end
+          else
+            assigner = if tag == '050' && ind2 == '0' then 'dlc'
+              elsif %w(060 061).include?(tag) then 'dnlm'
+              elsif %w(070 071).include?(tag) then 'dnal'
+              elsif %w(082 083 084).include?(tag) && field['q'] then field['q']
+              else nil
+              end
+            uri_class = get_uri('classification')
+            @graph << [subject, BF.classification, uri_class]
+            @graph << [uri_class, RDF.type, BF.Classification]
+            scheme = case tag
+             when '050' then 'lcc'
+             when '060' then 'nlm'
+             when '080' then 'udc'
+             when '082', '083' then 'ddc'
+             when '084', '086'
+              if field['2'] then field['2'] else nil end
+             else nil
+            end
+            @graph << [uri_class, BF.classificationScheme, scheme] if scheme
+            if %w(082 083).include?(tag) && field['m']
+              if field['m'] == 'a'
+                @graph << [uri_class, BF.classificationDesignation, 'standard']
+              elsif field['m'] == 'b'
+                @graph << [uri_class, BF.classificationDesignation, 'optional']
+              end
+            end
+            @graph << [uri_class, BF.classificationNumber, classification]
+            @graph << [uri_class, BF.label, classification]
+            @graph << [uri_class, BF.classificationAssigner, RDF::URI.new("http://id.loc.gov/vocabulary/organizations/#{assigner}")] if assigner
+            if (%w(080 082 083).include?(tag) && %w(0 1).include?(ind1)) ||
+               (%w(082 083).include?(tag) && field['2'])
+              edition = if %w(080 082 083).include?(tag) && ind1 == '1' then 'abridged'
+                elsif %w(080 082 083).include?(tag) && ind1 == '0' then 'full'
+                elsif %w(082 083).include?(tag) && field['2'] then field['2']
                 else nil
                 end
-              uri_class = get_uri('classification')
-              @graph << [subject, BF.classification, uri_class]
-              @graph << [uri_class, RDF.type, BF.Classification]
-              scheme = case tag
-               when '050' then 'lcc'
-               when '060' then 'nlm'
-               when '080' then 'udc'
-               when '082', '083' then 'ddc'
-               when '084', '086'
-                if field['2'] then field['2'] else nil end
-               else nil
-              end
-              @graph << [uri_class, BF.classificationScheme, scheme] if scheme
-              if %w(082 083).include?(tag) && field['m']
-                if field['m'] == 'a'
-                  @graph << [uri_class, BF.classificationDesignation, 'standard']
-                elsif field['m'] == 'b'
-                  @graph << [uri_class, BF.classificationDesignation, 'optional']
-                end
-              end
-              @graph << [uri_class, BF.classificationNumber, classification]
-              @graph << [uri_class, BF.label, classification]
-              @graph << [uri_class, BF.classificationAssigner, RDF::URI.new("http://id.loc.gov/vocabulary/organizations/#{assigner}")] if assigner
-              if (%w(080 082 083).include?(tag) && %w(0 1).include?(ind1)) ||
-                 (%w(082 083).include?(tag) && field['2'])
-                edition = if %w(080 082 083).include?(tag) && ind1 == '1' then 'abridged'
-                  elsif %w(080 082 083).include?(tag) && ind1 == '0' then 'full'
-                  elsif %w(082 083).include?(tag) && field['2'] then field['2']
-                  else nil
-                  end
-                generate_property_from_text(tag, '', edition, 'classification', uri_class) if edition
-              end
-              generate_simple_property(field, 'classification', uri_class) if tag == '083'
+              generate_property_from_text(tag, '', edition, 'classification', uri_class) if edition
             end
+            generate_simple_property(field, 'classification', uri_class) if tag == '083'
           end
         end
       end
@@ -319,52 +327,50 @@ module Bibframe
       end
     end
 
-    def generate_complex_notes(subject)
-      @record.fields('505') do |field|
-        next unless field.indicator2 == '0'
-        codes = field.codes(false)
-        codes.delete('t')
-        notes =[]
-        note = {}
-        field.subfields.each do |sb|
-          if  sb.code == 't'
-            if note.has_key?(:title)
-              notes << note
-              note = {}
-            end
-            note[:title] = sb.value.gsub(/ \//, '')
+    def generate_complex_notes(field, subject)
+      return unless field.indicator2 == '0'
+      codes = field.codes(false)
+      codes.delete('t')
+      notes =[]
+      note = {}
+      field.subfields.each do |sb|
+        if  sb.code == 't'
+          if note.has_key?(:title)
+            notes << note
+            note = {}
+          end
+          note[:title] = sb.value.gsub(/ \//, '')
+        else
+          value = sb.value.gsub(/ --/, '')
+          case sb.code
+          when 'r'
+            note[:element] = 'creator'
+            note[:value] = value.split(';')
+          when 'u'
+            note[:element] = 'resource'
+            note[:uri] = RDF::URI.new(value)
           else
-            value = sb.value.gsub(/ --/, '')
-            case sb.code
-            when 'r'
-              note[:element] = 'creator'
-              note[:value] = value.split(';')
-            when 'u'
-              note[:element] = 'resource'
-              note[:uri] = RDF::URI.new(value)
-            else
-              note[:element] = 'note'
-              note[:value] = value
-            end
+            note[:element] = 'note'
+            note[:value] = value
           end
         end
-        notes << note if note.has_key?(:title)
+      end
+      notes << note if note.has_key?(:title)
 
-        notes.each do |nt|
-          uri_work = nt[:uri] ? nt[:uri] : get_uri('work')
-          @graph << [subject, BF.contains, uri_work]
-          @graph << [uri_work, RDF.type, BF.Work]
-          @graph << [uri_work, BF.title, nt[:title]]
-          case nt[:element]
-          when 'note'
-            @graph << [uri_work, BF.note, value]
-          when 'creator'
-            nt[:value].each do |value|
-              uri_agent = get_uri('agent')
-              @graph << [uri_work, BF.creator, uri_agent]
-              @graph << [uri_agent, RDF.type, BF.Agent]
-              @graph << [uri_agent, BF.label, value]
-            end
+      notes.each do |nt|
+        uri_work = nt[:uri] ? nt[:uri] : get_uri('work')
+        @graph << [subject, BF.contains, uri_work]
+        @graph << [uri_work, RDF.type, BF.Work]
+        @graph << [uri_work, BF.title, nt[:title]]
+        case nt[:element]
+        when 'note'
+          @graph << [uri_work, BF.note, value]
+        when 'creator'
+          nt[:value].each do |value|
+            uri_agent = get_uri('agent')
+            @graph << [uri_work, BF.creator, uri_agent]
+            @graph << [uri_agent, RDF.type, BF.Agent]
+            @graph << [uri_agent, BF.label, value]
           end
         end
       end
@@ -376,34 +382,26 @@ module Bibframe
       @graph << [subject, property, uri_agent]
     end
 
-    def generate_dissertation(subject)
-      @record.fields('502').each do |field|
-        if field['c']
-          uri_organ = get_uri('organization')
-          @graph << [subject, BF.dissertationInstitution, uri_organ]
-          [uri_organ, RDF.type, BF.Organization]
-          [uri_organ, BF.label, field['c']]
-        end
-        if field['o']
-          bn_id = RDF::Node.uuid
-          @graph << [subject, BF.dissertationIdentifier, bn_id]
-          [bn_id, RDF.type, BF.Identifier]
-          [bn_id, BF.identifierValue, field['o']]
-        end
+    def generate_dissertation(field, subject)
+      if field['c']
+        uri_organ = get_uri('organization')
+        @graph << [subject, BF.dissertationInstitution, uri_organ]
+        [uri_organ, RDF.type, BF.Organization]
+        [uri_organ, BF.label, field['c']]
+      end
+      if field['o']
+        bn_id = RDF::Node.uuid
+        @graph << [subject, BF.dissertationIdentifier, bn_id]
+        [bn_id, RDF.type, BF.Identifier]
+        [bn_id, BF.identifierValue, field['o']]
       end
     end
 
     # generate_events: event関連トリプルの作成
     #
-    # params [Array] target_fields 作成対象のタグの配列
+    # params [MARC::Datafield] field 作成対象のフィールド
     # params [RDF::Resource] subject このトリプルのサブジェクト
-    def generate_events(target_fields, subject)
-      @record.fields(target_fields).each do |field|
-        generate_event_graph(field, subject)
-      end
-    end
-
-    def generate_event_graph(field, subject)
+    def generate_events(field, subject)
       uri_event = get_uri('event')
       @graph << [subject, BF.envet, uri_event]
       @graph << [uri_event, RDF.type, BF.Event]
@@ -449,13 +447,11 @@ module Bibframe
       RDF::URI.new(uri)
     end
 
-    def generate_findaids(subject)
-      @record.fields('555').each do |field|
-        if field['u']
-          generate_find_aid_work(field, subject)
-        else
-          generate_simple_property(field, 'findingaid', subject)
-        end
+    def generate_findaids(field, subject)
+      if field['u']
+        generate_find_aid_work(field, subject)
+      else
+        generate_simple_property(field, 'findingaid', subject)
       end
     end
 
@@ -474,17 +470,15 @@ module Bibframe
       end
     end
 
-    def generate_gacs(subject)
-      @record.fields('043').each do |field|
-        if field['a']
-          gac = normalize_space(field['a']).gsub(/[\-\+\$]/, '')
-          @graph << [subject, BF.subject, RDF::URI.new("http://id.loc.gov/vocabulary/geographicAreas/#{gac}")]
-        end
+    def generate_gacs(field, subject)
+      if field['a']
+        gac = normalize_space(field['a']).gsub(/[\-\+\$]/, '')
+        @graph << [subject, BF.subject, RDF::URI.new("http://id.loc.gov/vocabulary/geographicAreas/#{gac}")]
       end
     end
 
-    def generate_genre(rtype, subject)
-      genre = @record['008'].value[23]
+    def generate_genre(field, rtype, subject)
+      genre = field.value[23]
       # おそらく BF.Categoryでトリプルを作成するようになる
       if FORMS_OF_ITEMS[genre] && FORMS_OF_ITEMS[genre][:rtype].include?(rtype)
         @graph << [subject, BF.genre, FORMS_OF_ITEMS[genre][:form]]
@@ -529,25 +523,27 @@ module Bibframe
     def generate_holdings(subject)
       # marcxml//hld:holdings は無視
       shelfs = []
-      @record.each do |field|
-        next unless %w(050 055 060 070 080 082 084).include?(field.tag)
-        sfa = field.values_of('a')
-        sfb = field.values_of('b')
-        values = []
-        if sfa.size > 0 && sfb.size > 0
-          values << normalize_space(sfa[0] + ' ' + sfb[0])
-          values << sfa[1..-1] if sfa.size > 1
-        elsif sfa.size > 0
-          values = sfa
-        end
-        property = case field.tag
-          when /(050|055|070)/ then BF.shelfMarkLcc
-          when '060' then BF.shelfMarkNlm
-          when '080' then BF.shelfMarkUdc
-          when '082' then BF.shelfMarkDdc
-          when '084' then BF.shelfMark
+      targets = @record.tags.select{|t| %w(050 055 060 070 080 082 084).include?(t)}
+      if targets.size > 0
+        @record.fields(targets).each do |field|
+          sfa = field.values_of('a')
+          sfb = field.values_of('b')
+          values = []
+          if sfa.size > 0 && sfb.size > 0
+            values << normalize_space(sfa[0] + ' ' + sfb[0])
+            values << sfa[1..-1] if sfa.size > 1
+          elsif sfa.size > 0
+            values = sfa
           end
-        shelfs << [property, values]
+          property = case field.tag
+            when /(050|055|070)/ then BF.shelfMarkLcc
+            when '060' then BF.shelfMarkNlm
+            when '080' then BF.shelfMarkUdc
+            when '082' then BF.shelfMarkDdc
+            when '084' then BF.shelfMark
+            end
+          shelfs << [property, values]
+        end
       end
 
       d852 = []
@@ -560,7 +556,7 @@ module Bibframe
         end
 
         shelf = field.subfields.select{|s| %w(k h l i m t).include?(s.code)}.map{|s| s.value}.join(' ')
-        d852 << [BF.shelfMark, shelf]
+        d852 << [BF.shelfMark, shelf] unless shelf == ''
         field.values_of('u').each do |value|
           if value.include?('doi')
             d852 << [BF.doi, RDF::URI.new(value)]
@@ -577,7 +573,7 @@ module Bibframe
 
       @record.fields(%w(051 061 071)).each do |field|
         note = field.subfields.select{|s| %w(a b c).include?(s.code)}.map{|s| s.value}.join(' ')
-        d852 << [BF.copyNote, note]
+        d852 << [BF.copyNote, note] unless note == ''
       end
 
       if shelfs.size > 0 || d852.size > 0
@@ -642,7 +638,6 @@ module Bibframe
             @graph << [bn_identifier, RDF.type, BF.Identifier]
             handle_cancels(field, sbfield, h[:property], bn_identifier)
           end
-
         end
       end
     end
@@ -726,7 +721,9 @@ module Bibframe
       get_instance_types.each do |type|
         @graph << [uri_instance, RDF.type, BF[type]]
       end
-      generate_title(%w(245 246 247 222 242 210), 'instance', uri_instance)
+      @record.fields(%w(245 246 247 222 242 210)).each do |f|
+        generate_title(f, 'instance', uri_instance)
+      end
       if %w(260 264).include?(field.tag)
         generate_publication(field, uri_instance)
       elsif %w(261 262).include?(field.tag)
@@ -976,8 +973,9 @@ module Bibframe
     end
 
     def generate_500_notes(subject)
-      @record.each do |field|
-        if field.tag.start_with?('5') && !(%w(500 502 504 505 506 507 508 511 513 518 520 522 524 525 541 546 555).include?(field.tag))
+      targets = @record.tags.select{|t| t.start_with?('5')}.reject{|t| %w(500 502 504 505 506 507 508 511 513 518 520 522 524 525 541 546 555).include?(t)}
+      if targets.size > 0
+        @record.fields(targets) do |field|
           note = field.subfields.select{|s| %w(3 a).include?(s.code)}.map{|s| s.value}.join(' ')
           @graph << [subject, BF.note, note] unless note == ''
         end
@@ -1168,13 +1166,7 @@ module Bibframe
       end
     end
 
-    def generate_names(tags, subject)
-      @record.fields(tags).each do |field|
-        generate_name_graph(field, subject)
-      end
-    end
-
-    def generate_name_graph(field, subject)
+    def generate_names(field, subject)
       resource_role = get_resource_role(field)
       bf_class = get_bf_class(field)
       label = get_label(field)
@@ -1355,39 +1347,36 @@ module Bibframe
       end
     end
 
-    def generate_related_works(domain, subject)
-      @record.each do |field|
-        next unless %w(400|410|411|430|440|490|533|534|630|700|710|711|720|730|740|760|762|765|767|770|772|773|774|775|776|777|780|785|786|787|800|810|811|830).include?(field.tag)
-        tag, ind2 = field.tag, field.indicator2
-        case tag
-        when /(730|740|772|780|785)/
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag) && h[:ind2].include?(ind2)}.map{|h| h[:property]}.each do |property|
-              generate_related_works_graph(field, property, subject)
-            end
-        when '533'
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
-            generate_related_reporoduction(field, property, subject)
-          end
-        when /(700|710|711|720)/
-          next unless field['t'] && ind2 == '2'
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag) && h[:ind2].include?(ind2)}.map{|h| h[:property]}.each do |property|
+    def generate_related_works(field, domain, subject)
+      tag, ind2 = field.tag, field.indicator2
+      case tag
+      when /(730|740|772|780|785)/
+        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag) && h[:ind2].include?(ind2)}.map{|h| h[:property]}.each do |property|
             generate_related_works_graph(field, property, subject)
           end
-        when /(490|630|830)/
-          next unless field['a']
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
-            generate_related_works_graph(f, property, subject)
-          end
-        when '534'
-          next unless field['f']
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
-            generate_related_works_graph(field, property, subject)
-          end
-        else
-          next unless field['t'] || field['s']
-          RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
-            generate_related_works_graph(field, property, subject)
-          end
+      when '533'
+        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
+          generate_related_reporoduction(field, property, subject)
+        end
+      when /(700|710|711|720)/
+        return unless field['t'] && ind2 == '2'
+        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag) && h[:ind2].include?(ind2)}.map{|h| h[:property]}.each do |property|
+          generate_related_works_graph(field, property, subject)
+        end
+      when /(490|630|830)/
+        return unless field['a']
+        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
+          generate_related_works_graph(f, property, subject)
+        end
+      when '534'
+        return unless field['f']
+        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
+          generate_related_works_graph(field, property, subject)
+        end
+      else
+        return unless field['t'] || field['s']
+        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
+          generate_related_works_graph(field, property, subject)
         end
       end
     end
@@ -1502,11 +1491,9 @@ module Bibframe
       end
     end
 
-    def generate_subjects(subject)
-      @record.each do |field|
-        if SUBJECTS_TYPES[field.tag]
-          generate_subject_graph(field, SUBJECTS_TYPES[field.tag], subject)
-        end
+    def generate_subjects(field, subject)
+      if SUBJECTS_TYPES[field.tag]
+        generate_subject_graph(field, SUBJECTS_TYPES[field.tag], subject)
       end
     end
 
@@ -1546,15 +1533,9 @@ module Bibframe
 
     # generate_title: title関連トリプルの作成
     #
-    # params [Array] target_fields 作成対象のタグの配列
+    # params [MARC::Datafield] field 作成対象のフィールド
     # params [RDF::Resource] subject このトリプルのサブジェクト
-    def generate_title(target_fields, domain, subject)
-      @record.fields(target_fields).each do |field|
-        generate_title_graph(field, domain, subject)
-      end
-    end
-
-    def generate_title_graph(field, domain, subject)
+    def generate_title(field, domain, subject)
       title = get_title(field)
       element_name = get_element_name(field, domain)
       xml_lang = (field.tag == '242' && field['y']) ? field['f'] : nil
@@ -1598,28 +1579,25 @@ module Bibframe
     end
 
     def get_title_type(field)
-      if %w(242 246 247).include?(field.tag)
-        case field.tag
-        when '242' then 'Translated title'
-        when '247' then 'Former title'
+      return unless %w(242 246 247).include?(field.tag)
+      case field.tag
+      when '242' then 'Translated title'
+      when '247' then 'Former title'
+      else
+        if field.indicator2 == ' ' && field['i']
+          field['i']
         else
-          if field.indicator2 == ' ' && field['i']
-            field['i']
-          else
-            case field.indicator2
-            when '0' then 'portion'
-            when '1' then 'parallel'
-            when '2' then 'distinctive'
-            when '4' then 'cover'
-            when '6' then 'caption'
-            when '7' then 'running'
-            when '8' then 'spine'
-            else nil
-            end
+          case field.indicator2
+          when '0' then 'portion'
+          when '1' then 'parallel'
+          when '2' then 'distinctive'
+          when '4' then 'cover'
+          when '6' then 'caption'
+          when '7' then 'running'
+          when '8' then 'spine'
+          else nil
           end
         end
-      else
-        nil
       end
     end
 
@@ -1711,37 +1689,7 @@ module Bibframe
       end
     end
 
-    def get_types
-      types = []
-      leader6 = @record.leader[6]
-      types << RESOURCE_TYPES[:leader][leader6] if RESOURCE_TYPES[:leader].has_key?(leader6)
-      if @record['007']
-        code = @record['007'].value
-        types << RESOURCE_TYPES[:cf007][code] if RESOURCE_TYPES[:cf007].has_key?(code)
-      end
 
-      if @record['336']
-        @record.fields['336'].each do |field|
-          field.each do |sbfield|
-            code = sbfield.code
-            value = sbfield.value.downcase
-            types << RESOURCE_TYPES[:sf336a][value] if code == 'a' && RESOURCE_TYPES[:sf336a].has_key?(value)
-            types << RESOURCE_TYPES[:sf336b][value] if code == 'b' && RESOURCE_TYPES[:sf336b].has_key?(value)
-          end
-        end
-      end
-      if @record['337']
-        @record.fields['337'].each do |field|
-          field.each do |sbfield|
-            code = sbfield.code
-            value = sbfield.value.downcase
-            types << RESOURCE_TYPES[:sf337a][value] if code == 'a' && RESOURCE_TYPES[:sf337a].has_key?(value)
-            types << RESOURCE_TYPES[:sf337b][value] if code == 'b' && RESOURCE_TYPES[:sf337b].has_key?(value)
-          end
-        end
-      end
-      types.flatten.uniq
-    end
 
     def generate_work_type(subject)
       get_types.each do |type|
