@@ -6,16 +6,25 @@ module Bibframe
 
     include Bibframe::Utils
 
-    attr_reader :graph, :resolve, :baseuri
+    attr_reader :graph, :source, :resolve, :baseuri
 
-    def initialize(repository, record, resolve=true, baseuri=nil)
+    def initialize(repository, record, resolve=true, source='lc', baseuri=nil)
       @record = record
-      record_id = @record['001'].value.strip
-      record_id += '-' + @record['003'].value.strip.downcase.gsub(/[^a-z]/, '') if @record['003']
-      @baseuri = baseuri ? baseuri : "http://id.loc.gov/resources/bibs/" + record_id
+      record_id = source == 'ndl' ? @record['015']['a'].strip : @record['001'].value.strip
+      @baseuri = if baseuri
+        baseuri
+      else
+        case source
+        when 'ndl' then 'http://id.ndl.go.jp/jpno/'
+        when 'bl'  then 'http://bnb.data.bl.uk/doc/resource/'
+        else            'http://id.loc.gov/resources/bibs/'
+        end
+      end
+      @baseuri += record_id
       @graph = RDF::Graph.new(RDF::URI.new(@baseuri), {data: repository})
       @num = 0
       @resolve = resolve
+      @source = source
       @types = []
       parse
     end
@@ -1172,9 +1181,16 @@ module Bibframe
       @graph << [bn_name, BF.label, label]
       unless field.tag == '534'
         @graph << [bn_name, BF.authorizedAccessPoint, label]
-        auth_id = resolve ? getAuthorityID(bf_class.label, label) : nil
-        if auth_id
-          @graph << [bn_name, BF.hasAuthority, RDF::URI.new(auth_id)]
+        auth_uri = if resolve
+          if @source == 'ndl'
+            field['0'] ? RDF::URI.new("http://id.ndl.go.jp/auth/ndlna/#{field['0']}") : nil
+          else
+            auth_id = getAuthorityID(bf_class.label, label)
+            auth_id ? RDF::URI.new(auth_id) : nil
+          end
+        end
+        if auth_uri
+         @graph << [bn_name, BF.hasAuthority, auth_uri]
         else
           ## TODO これは必要か（mads vocabularyを使用）
           generate_element_list(label, bn_name)
@@ -1500,12 +1516,21 @@ module Bibframe
       @graph << [subject, BF.subject, bn_subject]
       @graph << [bn_subject, RDF.type, BF[type]]
       @graph << [bn_subject, BF.authorizedAccessPoint, label]
-      auth_id = resolve ? getAuthorityID(BF[type].label, label) : nil
-      @graph << [bn_subject, BF.hasAuthority, RDF::URI.new(auth_id)] if auth_id
+      auth_uri = if resolve
+        if @source == 'ndl'
+          field['0'] ? RDF::URI.new("http://id.ndl.go.jp/auth/ndlsh/#{field['0']}") : nil
+        else
+          auth_id = getAuthorityID(BF[type].label, label)
+          auth_id ? RDF::URI.new(auth_id) : nil
+        end
+      end
+      @graph << [bn_subject, BF.hasAuthority, auth_uri] if auth_uri
       @graph << [bn_subject, BF.label, label]
       generate_880_label(field, 'subject', bn_subject)
-      field.values_of('0').each do |value|
-        handle_system_number(value, bn_subject)
+      unless @source == 'ndl'
+        field.values_of('0').each do |value|
+          handle_system_number(value, bn_subject)
+        end
       end
     end
 
@@ -1548,8 +1573,10 @@ module Bibframe
         generate_880_label(field, 'title', bn_title)
       end
       generate_title_non_sort(field, title, element_name, bn_title)
-      field.subfields.each do |s|
-        handle_system_number(s.value, bn_title) if s.code == '0'
+      unless @source == 'ndl'
+        field.values_of('0').each do |value|
+          handle_system_number(value, bn_title)
+        end
       end
     end
 

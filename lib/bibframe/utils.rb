@@ -92,10 +92,10 @@ module Bibframe
         id = clean_string(sysnum.sub(/\(OCoLC\)/, '')).gsub(/^(ocm|ocn)/, '')
         @graph << [resource, BF.systemNumber, RDF::URI.new('http://www.worldcat.org/oclc/'+id)]
       else
-        uri_identifier = get_uri('identifier')
-        @graph << [resource, BF.systemNumber, uri_identifier]
-        @graph << [uri_identifier, RDF.type, BF.Identifier]
-        @graph << [uri_identifier, BF.identifierValue, sysnum]
+        bn_identifier = RDF::Node.uuid
+        @graph << [resource, BF.systemNumber, bn_identifier]
+        @graph << [bn_identifier, RDF.type, BF.Identifier]
+        @graph << [bn_identifier, BF.identifierValue, sysnum]
       end
     end
 
