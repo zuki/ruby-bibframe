@@ -5,7 +5,7 @@ module MARC
   class Record
     def include_member?(ary)
       all_tags = self.tags
-      if ary.is_a?(Array)
+      if ary.is_a? Array
         ary.select{|t| all_tags.include?(t)}.size > 0
       else
         raise MARC::Exception.new(),
@@ -16,7 +16,14 @@ module MARC
 
   class DataField
     def values_of(code)
-      subfields.select{|s| s.code == code}.map{|s| s.value}
+      if code.is_a? String
+        subfields.select{|s| s.code == code}.map{|s| s.value}
+      elsif code.is_a? Array
+        subfields.select{|s| code.include?(s.code)}.map{|s| s.value}
+      else
+        raise MARC::Exception.new(),
+        "parameter is not Array nor String but instance of #{code.class}"
+      end
     end
 
     def has_subfields(code)

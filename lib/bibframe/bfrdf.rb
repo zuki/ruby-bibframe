@@ -323,10 +323,7 @@ module Bibframe
     end
 
     def get_class_property(domain, tag)
-      if CLASSES[domain]
-        selected = CLASSES[domain].select{|h| h[:tag].include?(tag)}
-        return selected[0][:name] if selected.size > 0
-      end
+      return CLASSES[domain] ? CLASSES[domain][tag] : nil
     end
 
     def generate_complex_notes(field, subject)
@@ -603,31 +600,39 @@ module Bibframe
     end
 
     def generate_identifiers(domain, subject)
-      properties = SIMPLE_PROPERTIES[domain].select{|h| h[:group] == 'identifiers'}
+      properties = []
+      SIMPLE_PROPERTIES[domain].each_key do |key|
+        nodes = SIMPLE_PROPERTIES[domain][key].is_a?(Hash) ? [SIMPLE_PROPERTIES[domain][key]] :
+                                                              SIMPLE_PROPERTIES[domain][key]
+        nodes.each do |node|
+          next unless node[:group] == 'identifiers'
+          node[:tag] = key
+          properties << node
+        end
+      end
       return if properties.size == 0
 
-      @record.each do |field|
-        next if MARC::ControlField.control_tag?(field.tag)
-        tag, ind1, ind2 = field.tag, field.indicator1, field.indicator2
-        properties.each do |h|
-          next unless h[:tag] == tag && h[:ind1] == nil
+      properties.each do |h|
+        next unless h[:ind1] == nil
+        @record.fields(h[:tag]).each do |field|
+          tag = field.tag
           if h[:uri] == nil || field.has_subfields(%w(b q 2)) ||
-            (field.tag == '037' && field['c']) ||
-            (field.tag == '040' && field['a'] && normalize_space(field['a']).start_with?('Ca'))
+            (tag == '037' && field['c']) ||
+            (tag == '040' && field['a'] && normalize_space(field['a']).start_with?('Ca'))
             bn_identifier = RDF::Node.uuid
             @graph << [subject, BF[h[:property]], bn_identifier]
             @graph << [bn_identifier, RDF.type, BF.Identifier]
             @graph << [bn_identifier, BF.identifierScheme, h[:property]]
             @graph << [bn_identifier, BF.identifierValue, field['a'].strip]
-            field.subfields.select{|s| %w(b 2).include?(s.code)}.map{|s| s.value}.each do |value|
+            field.values_of(%w(b 2)).each do |value|
               @graph << [bn_identifier, BF.identifierAssigner, value]
             end
-            unless field.tag == '856'
+            unless tag == '856'
               field.values_of('q').each do |value|
                 @graph << [bn_identifier, BF.identifierQualifier, value]
               end
             end
-            if field.tag == '037'
+            if tag == '037'
               field.subfiels.values_of('c').each do |value|
                 @graph << [bn_identifier, BF.identifierQualifier, value]
               end
@@ -1082,8 +1087,9 @@ module Bibframe
             end
           end
         end
-        SIMPLE_PROPERTIES['contentcategory'].each do |h|
-          @record.fields(h[:tag]).each do |field|
+        SIMPLE_PROPERTIES['contentcategory'].each_key do |tag|
+          h = SIMPLE_PROPERTIES['contentcategory'][tag]
+          @record.fields(tag).each do |field|
             field.values_of(h[:sfcodes]).each do |value|
               bn_category = RDF::Node.uuid
               @graph << [subject, BF.contentCategory, bn_category]
@@ -1362,37 +1368,42 @@ module Bibframe
       tag, ind2 = field.tag, field.indicator2
       case tag
       when /(730|740|772|780|785)/
-        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag) && h[:ind2].include?(ind2)}.map{|h| h[:property]}.each do |property|
-            generate_related_works_graph(field, property, subject)
-          end
+        property = getRelationship(domain, tag, ind2)
+        generate_related_works_graph(field, property, subject)
       when '533'
-        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
-          generate_related_reporoduction(field, property, subject)
-        end
+        property = getRelationship(domain, tag, nil)
+        generate_related_reporoduction(field, property, subject)
       when /(700|710|711|720)/
         return unless field['t'] && ind2 == '2'
-        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag) && h[:ind2].include?(ind2)}.map{|h| h[:property]}.each do |property|
-          generate_related_works_graph(field, property, subject)
-        end
+        property = getRelationship(domain, tag, ind2)
+        generate_related_works_graph(field, property, subject)
       when /(440|490|630|830)/
         return unless field['a']
-        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
-          generate_related_works_graph(field, property, subject)
-        end
+        property = getRelationship(domain, tag, nil)
+        generate_related_works_graph(field, property, subject)
       when '534'
         return unless field['f']
-        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
-          generate_related_works_graph(field, property, subject)
-        end
+        property = getRelationship(domain, tag, nil)
+        generate_related_works_graph(field, property, subject)
       else
         return unless field['t'] || field['s']
-        RELATIONSHIPS[domain].select{|h| h[:tag].include?(tag)}.map{|h| h[:property]}.each do |property|
-          generate_related_works_graph(field, property, subject)
-        end
+        property = getRelationship(domain, tag, nil)
+        generate_related_works_graph(field, property, subject)
+      end
+    end
+
+    def getRelationship(domain, tag, ind2)
+      return unless RELATIONSHIPS[domain] && RELATIONSHIPS[domain][tag]
+      if ind2
+        hs = RELATIONSHIPS[domain][tag].find{|h| h[:ind2] == ind2}
+        hs ? hs[:property] : nil
+      else
+        RELATIONSHIPS[domain][tag] ? RELATIONSHIPS[domain][tag][:property] : nil
       end
     end
 
     def generate_related_works_graph(field, property, subject)
+      return unless property
       sfcodes = case field.tag
         when /(630|730|740)/ then %w(a n p)
         when /(440|490|830)/ then %w(a n p v)
@@ -1444,6 +1455,7 @@ module Bibframe
     end
 
     def generate_related_reporoduction(field, property, subject)
+      return unless property
       title = @record['245']['a']
       carrier = if field['a'] then field['a']
         elsif field['3'] then field['3']
@@ -1728,31 +1740,36 @@ module Bibframe
     #
     def generate_simple_property(field, domain, subject)
       return if MARC::ControlField.control_tag?(field.tag)
-      return unless SIMPLE_PROPERTIES[domain]
       tag, ind1, ind2 = field.tag, field.indicator1, field.indicator2
-      SIMPLE_PROPERTIES[domain].each do |node|
-        next unless node[:tag] == tag
-        next unless node[:ind1] == nil || node[:ind1] == ind1
-        next unless node[:ind2] == nil || node[:ind2] == ind2
-
-        startwith = node[:startwith] ? node[:startwith] : ''
-        sfcodes = node[:sfcodes] ? node[:sfcodes].split('').delete_if{|x| x==','} : []
-        values = []
-        if sfcodes.length > 1
-          stringjoin = node[:stringjoin] ? node[:stringjoin] : ' '
-          value = field.subfields.select{|sf| sfcodes.include?(sf.code) }.map{|sf| sf.value}.join(stringjoin)
-          values << startwith + value if value != ''
+      return unless SIMPLE_PROPERTIES[domain] && SIMPLE_PROPERTIES[domain][tag]
+      hs = SIMPLE_PROPERTIES[domain][tag]
+      nodes = case hs
+        when is_a?(Array)
+          hs.select{|n| (n[:ind1] == nil || n[:ind1] == ind1) && (n[:ind2] == nil || n[:ind2] == ind2)}
+        when is_a?(Hash)
+          (hs[:ind1] == nil || hs[:ind1] == ind1) && (hs[:ind2] == nil || hs[:ind2] == ind2) ? [hs] : []
         else
-          field.each do |sbfield|
-            # {domain: "instance", property: "$2", tag: "024", sfcodes: "a", ind1: "7", group: "identifiers", label: "contents of $2"}
-            if node[:property]=='$2' && sbfield.code == '2'
-              node[:property] = sbfield.value
-              node[:label] = node[:label].sub(/\$2/, sbfield.value)
-              next
-            end
-            next unless sbfield.code == sfcodes[0]
-            values << startwith + sbfield.value
+          []
+        end
+      return nodes.size == 0
+
+      nodes.each do |node|
+        # {domain: "instance", property: "$2", tag: "024", sfcodes: "a", ind1: "7", group: "identifiers"}
+        if node[:property]=='$2' && field['2']
+          node[:property] = field['2']
+        end
+        startwith = node[:startwith] ? node[:startwith] : ''
+        stringjoin = node[:stringjoin] ? node[:stringjoin] : ' '
+        codes = node[:sfcodes] ? node[:sfcodes] : 'a'
+        values = []
+        case codes.length
+        when 1
+          field.values_of(codes).each do |value|
+            values << startwith + value
           end
+        else
+          value = field.subfields.select{|sf| codes.include?(sf.code) }.map{|sf| sf.value}.join(stringjoin)
+          values << startwith + value if value != ''
         end
 
         if node[:group] == 'identifiers'
@@ -1911,9 +1928,9 @@ module Bibframe
     end
 
     def generate_property_from_text(tag, sfcode, text, domain, subject)
-      SIMPLE_PROPERTIES[domain].each do |h|
-        next unless h[:tag] == tag && (h[:sfcodes].include?(sfcode) || h[:sfcodes] == '')
-        #rcode = h[:sfcodes] != '' ? h[:sfcodes] : 'a'
+      return unless SIMPLE_PROPERTIES[domain] && SIMPLE_PROPERTIES[domain][tag]
+      SIMPLE_PROPERTIES[domain][tag].each do |h|
+        next unless h[:sfcodes].include?(sfcode) || h[:sfcodes] == ''
         startwith = h[:startwith] ? h[:startwith] : ''
         object =
           if h[:uri] == nil
