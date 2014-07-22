@@ -24,8 +24,8 @@ module Bibframe
 
       # フィールドごとに処理できない（その1）
       @graph << [work, RDF.type, BF.Work]
-      generate_type(work)
-      generate_accesspoint(work)        # 130  240 (245) 100 110 111
+      generate_types(work)
+      generate_accesspoints(work)        # 130  240 (245) 100 110 111
       generate_uniform_title(work)
       # generate_accesspoints_work880(subject) 翻訳形のauthor+title 今のロジックでは難しい
       generate_langs(work)
@@ -35,7 +35,7 @@ module Bibframe
       @record.each do |field|
         case field.tag
         when '502'
-          generate_dissertation(field, work)
+          generate_dissertations(field, work)
         when /(100|110|111|700|710|711|720)/
           generate_names(field, work)
         when /(243|245|247)/
@@ -64,7 +64,7 @@ module Bibframe
         when /(400|410|411|430|440|490|533|534|630|700|710|711|720|730|740|760|762|765|767|770|772|773|774|775|776|777|780|785|786|787|800|810|811|830)/
           generate_related_works(field, 'work', work)
         when /(856|859)/
-          generate_bio_links(field, work)
+          generate_from_856(field, work)
         end
         # フィールドが設定ファイルで指定されており、独立に処理可能
         generate_simple_property(field, "work", work)
@@ -77,13 +77,17 @@ module Bibframe
       generate_instances(work)
     end
 
-    def generate_type(subject)
+    # レコード種別に関するトリプルを作成
+    # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_types(subject)
       get_types.each do |type|
         @graph << [subject, RDF.type, BF[type]]
       end
     end
 
-    def generate_accesspoint(subject)
+    # 標目に関するトリプルを作成
+    # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_accesspoints(subject)
       title = nil
       @record.fields(%w(130 240)).each do |field|
         title = field.subfields.reject{|s| %w(0 6 8).include?(s.code)}.map{|s| s.value}.join(' ')
@@ -102,6 +106,8 @@ module Bibframe
       @graph << [subject, BF.authorizedAccessPoint, alabel]
     end
 
+    # 統一書名に関するトリプルを作成
+    # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
     def generate_uniform_title(subject)
       require 'iso-639'
 
@@ -153,6 +159,245 @@ module Bibframe
         end
       end
     end
+
+    # 言語に関するトリプルを作成
+    # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_langs(subject)
+      lang_008 = normalize_space(@record['008'].value[35, 3])
+      lang_041 = []
+      @record.fields('041').each do |field|
+        lang_041 << field.values_of('a')
+      end
+      lang_041 = lang_041.flatten.uniq
+
+      lang_041.each do |lang|
+        @graph << [subject, BF.language, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{lang}")]
+      end
+      if lang_008 != '   ' && lang_008 != '|||' && (lang_041.length == 0 || lang_008 != lang_041[0])
+        @graph << [subject, BF.language, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{lang_008}")]
+      end
+
+      @record.fields('041').each do |field|
+        field.subfields.each do |sf|
+          next unless %w(b d e f g h j k m n).include?(sf.code)
+          bn_lang = RDF::Node.uuid
+          @graph << [subject, BF.language, bn_lang]
+          @graph << [bn_lang, RDF.type, BF.Language]
+          @graph << [bn_lang, BF.resourcePart, LANG_PART[sf.code]] if LANG_PART[sf.code]
+          sf.value.strip.scan(/.{3}/).each do |code|
+            @graph << [bn_lang, BF.languageOfPartUri, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{code}")]
+          end
+          @graph << [bn_lang, BF.languageSource, field['2']] if field['2']
+        end
+      end
+    end
+
+    # 識別子に関するトリプルを作成
+    # @param [String] domain 処理対象の実体
+    # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_identifiers(domain, subject)
+      properties = []
+      SIMPLE_PROPERTIES[domain].each_key do |tag|
+        nodes = SIMPLE_PROPERTIES[domain][tag].is_a?(Hash) ? [SIMPLE_PROPERTIES[domain][tag]] :
+                                                              SIMPLE_PROPERTIES[domain][tag]
+        nodes.each do |node|
+          next unless node[:group] == 'identifiers'
+          node[:tag] = tag
+          properties << node
+        end
+      end
+      return if properties.size == 0
+
+      properties.each do |h|
+        next unless h[:ind1] == nil
+        @record.fields(h[:tag]).each do |field|
+          tag = field.tag
+          if h[:uri] == nil || field.has_subfields(%w(b q 2)) ||
+            (tag == '037' && field['c']) ||
+            (tag == '040' && field['a'] && normalize_space(field['a']).start_with?('Ca'))
+            bn_identifier = RDF::Node.uuid
+            @graph << [subject, BF[h[:property]], bn_identifier]
+            @graph << [bn_identifier, RDF.type, BF.Identifier]
+            @graph << [bn_identifier, BF.identifierScheme, h[:property]]
+            @graph << [bn_identifier, BF.identifierValue, field['a'].strip]
+            field.values_of(%w(b 2)).each do |value|
+              @graph << [bn_identifier, BF.identifierAssigner, value]
+            end
+            unless tag == '856'
+              field.values_of('q').each do |value|
+                @graph << [bn_identifier, BF.identifierQualifier, value]
+              end
+            end
+            if tag == '037'
+              field.subfiels.values_of('c').each do |value|
+                @graph << [bn_identifier, BF.identifierQualifier, value]
+              end
+            end
+          else
+            generate_simple_property(field, domain, subject)
+          end
+          field.each do |sbfield|
+            next unless %w(m y z).include?(sbfield.code)
+            bn_identifier = RDF::Node.uuid
+            @graph << [subject, BF[h[:property]], bn_identifier]
+            @graph << [bn_identifier, RDF.type, BF.Identifier]
+            handle_cancels(field, sbfield, h[:property], bn_identifier)
+          end
+        end
+      end
+    end
+
+    # 学位論文に関するトリプルを作成（ただし$abdはgenerate_simple_propertyで処理）
+    # @param [MARC::Datafield] field 処理対象フィールド（502固定)
+    # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_dissertations(field, subject)
+      if field['c']
+        bn_organ = RDF::Node.uuid
+        @graph << [subject, BF.dissertationInstitution, bn_organ]
+        @graph << [bn_organ, RDF.type, BF.Organization]
+        @graph << [bn_organ, BF.label, field['c']]
+      end
+      if field['o']
+        bn_id = RDF::Node.uuid
+        @graph << [subject, BF.dissertationIdentifier, bn_id]
+        @graph << [bn_id, RDF.type, BF.Identifier]
+        @graph << [bn_id, BF.identifierValue, field['o']]
+      end
+    end
+
+    # 著者に関するトリプルを作成
+    # @param [MARC::Datafield] field 処理対象フィールド (100|110|111|700|710|711|720)
+    # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_names(field, subject)
+      resource_role = get_resource_role(field)
+      bf_class = get_bf_class(field)
+      label = get_label(field)
+
+      bn_name = RDF::Node.uuid
+      @graph << [subject, resource_role, bn_name]
+      @graph << [bn_name, RDF.type, bf_class]
+      @graph << [bn_name, BF.label, label]
+      unless field.tag == '534'
+        @graph << [bn_name, BF.authorizedAccessPoint, label]
+        auth_uri = if resolve
+          if @source == 'ndl'
+            field['0'] ? RDF::URI.new("http://id.ndl.go.jp/auth/ndlna/#{field['0']}") : nil
+          else
+            auth_id = getAuthorityID(bf_class.label, label)
+            auth_id ? RDF::URI.new(auth_id) : nil
+          end
+        end
+        if auth_uri
+         @graph << [bn_name, BF.hasAuthority, auth_uri]
+        else
+          ## TODO これは必要か（mads vocabularyを使用）
+          generate_element_list(label, bn_name)
+        end
+      end
+
+      generate_880_label(field, "name", bn_name) if field['6']
+      generate_from_856(field, bn_name)
+    end
+
+    # タイトルに関連するトリプルを作成
+    # param [MARC::Datafield] field 処理対象フィールド (243|245|247)
+    # param [String] domain 処理対象の実体
+    # param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_title(field, domain, subject)
+      title = get_title(field)
+      element_name = get_element_name(field, domain)
+      xml_lang = (field.tag == '242' && field['y']) ? field['f'] : nil
+      title_literal = xml_lang ? RDF::Literal.new(title, :language => xml_lang.to_sym) : title
+      title_type = get_title_type(field)
+
+      bn_title = RDF::Node.uuid
+      @graph << [subject, BF.title, title_literal]
+      @graph << [subject, element_name, bn_title]
+      @graph << [bn_title, RDF.type, BF.Title]
+      if title_type
+        @graph << [bn_title, BF.titleType, title_type]
+      else
+        generate_simple_property(field, 'title', bn_title)
+        generate_880_label(field, 'title', bn_title)
+      end
+      generate_title_non_sort(field, title, element_name, bn_title)
+      unless @source == 'ndl'
+        field.values_of('0').each do |value|
+          handle_system_number(value, bn_title)
+        end
+      end
+    end
+
+    # イベントに関連するトリプルを作成
+    #   TODO: 該当するデータが見つからず未チェック
+    # param [MARC::Datafield] field 処理対象フィールド (033)
+    # param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_events(field, subject)
+      bn_event = RDF::Node.uuid
+      @graph << [subject, BF.envet, bn_event]
+      @graph << [bn_event, RDF.type, BF.Event]
+      subfields = field.subfields
+      subfields.each_index do |i|
+        case subfield[i].code
+        when 'a'
+          @graph << [bn_event, BF.eventDate, get_event_date(field)]
+        when 'b'
+          @graph << [bn_event, BF.eventPlace, get_event_place(field, i)]
+        when 'p'
+          bn_place = RDF::Node.uuid
+          @graph << [bn_event, BF.eventPlace, bn_place]
+          @graph << [bn_place, RDF.type, BF.Place]
+          @graph << [bn_place, BF.label, subfields[i].value]
+          if subfields[i+1] && subfields[i+1].code == '0'
+            @graph << [bn_place, BF.systemNumber, subfields[i+1].value]
+          end
+        end
+      end
+    end
+
+    # 対象読者注記に関連するトリプルを作成
+    #   TODO: 該当するデータが見つからず未チェック
+    # param [MARC::Datafield] field 処理対象フィールド (521)
+    # param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_audience_521(field, subject)
+      if field['a']
+        bn_audience = RDF::Node.uuid
+        @graph << [subject, BF.intendedAudience, bn_audience]
+        @graph << [bn_audience, RDF.type, BF.IntendedAudience]
+        field.values_of('a').each do |value|
+         @graph << [bn_audience, BF.audience, value]
+        end
+        @graph << [bn_audience, BF.audienceAssigner, field['b']] if field['b']
+      end
+    end
+
+    # 調査補助注記に関連するトリプルを作成
+    #   TODO: 該当するデータが見つからず未チェック
+    # param [MARC::Datafield] field 処理対象フィールド (555)
+    # param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_findaids(field, subject)
+      if field['u']
+        generate_find_aid_work(field, subject)
+      else
+        generate_simple_property(field, 'findingaid', subject)
+      end
+    end
+
+    # TAG(856|859)からInstance, Annotationを作成
+    # param [MARC::Datafield] field 処理対象フィールド (856|859)
+    # param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def generate_from_856(field, subject)
+      if %w(856 859).include?(field.tag)
+        field.each do |sbfield|
+          if sbfield.code == '3' && sbfield.value =~ /contributor/i
+            generate_instance_from856(field, "person", subject)
+          elsif sbfield.code == '3'
+            generate_instance_from856(field, "work", subject)
+          end
+        end
+      end
+    end
+
 
     private
 
@@ -273,14 +518,6 @@ module Bibframe
       when /[cdij]/ then 'MU'
       else nil
       end
-    end
-
-    def generate_audience_521(field, subject)
-      bn_audience = RDF::Node.uuid
-      @graph << [subject, BF.intendedAudience, bn_audience]
-      @graph << [bn_audience, RDF.type, BF.IntendedAudience]
-      @graph << [bn_audience, BF.audience, field['a']]
-      @graph << [bn_audience, BF.audienceAssigner, field['b']] if field['b']
     end
 
     def generate_cartography(field, subject)
@@ -445,48 +682,6 @@ module Bibframe
     end
 =end
 
-    def generate_dissertation(field, subject)
-      if field['c']
-        bn_organ = RDF::Node.uuid
-        @graph << [subject, BF.dissertationInstitution, bn_organ]
-        [bn_organ, RDF.type, BF.Organization]
-        [bn_organ, BF.label, field['c']]
-      end
-      if field['o']
-        bn_id = RDF::Node.uuid
-        @graph << [subject, BF.dissertationIdentifier, bn_id]
-        [bn_id, RDF.type, BF.Identifier]
-        [bn_id, BF.identifierValue, field['o']]
-      end
-    end
-
-    # generate_events: event関連トリプルの作成
-    #
-    # params [MARC::Datafield] field 作成対象のフィールド
-    # params [RDF::Resource] subject このトリプルのサブジェクト
-    def generate_events(field, subject)
-      bn_event = RDF::Node.uuid
-      @graph << [subject, BF.envet, bn_event]
-      @graph << [bn_event, RDF.type, BF.Event]
-      subfields = field.subfields
-      subfields.each_index do |i|
-        case subfield[i].code
-        when 'a'
-          @graph << [bn_event, BF.eventDate, get_event_date(field)]
-        when 'b'
-          @graph << [bn_event, BF.eventPlace, get_event_palce(field, i)]
-        when 'p'
-          bn_place = RDF::Node.uuid
-          @graph << [bn_event, BF.eventPlace, bn_place]
-          @graph << [bn_place, RDF.type, BF.Place]
-          @graph << [bn_place, BF.label, subfields[i].value]
-          if subfields[i+1] && subfields[i+1].code == '0'
-            @graph << [bn_place, BF.systemNumber, subfields[i+1].value]
-          end
-        end
-      end
-    end
-
     def get_event_date(field)
       case field.indicator1
       when '2'
@@ -498,7 +693,7 @@ module Bibframe
       end
     end
 
-    def get_event_palce(field, pos)
+    def get_event_place(field, pos)
       subcode = if field.subfields[pos+1] && field.subfields[pos+1] == 'c'
         field.subfields[pos+1].value
       else
@@ -508,14 +703,6 @@ module Bibframe
         nomalize_space(field.subfields[i].value)
       uri = subcode ? base + subcode : base
       RDF::URI.new(uri)
-    end
-
-    def generate_findaids(field, subject)
-      if field['u']
-        generate_find_aid_work(field, subject)
-      else
-        generate_simple_property(field, 'findingaid', subject)
-      end
     end
 
     def generate_find_aid_work(field, subject)
@@ -623,7 +810,7 @@ module Bibframe
         field.values_of('u').each do |value|
           if value.include?('doi')
             d852 << [BF.doi, RDF::URI.new(value)]
-          elsif value.include?(hdl)
+          elsif value.include?('hdl')
             d852 << [BF.hdl, RDF::URI.new(value)]
           else
             d852 << [BF.uri, RDF::URI.new(value)]
@@ -661,57 +848,7 @@ module Bibframe
       end
     end
 
-    def generate_identifiers(domain, subject)
-      properties = []
-      SIMPLE_PROPERTIES[domain].each_key do |key|
-        nodes = SIMPLE_PROPERTIES[domain][key].is_a?(Hash) ? [SIMPLE_PROPERTIES[domain][key]] :
-                                                              SIMPLE_PROPERTIES[domain][key]
-        nodes.each do |node|
-          next unless node[:group] == 'identifiers'
-          node[:tag] = key
-          properties << node
-        end
-      end
-      return if properties.size == 0
 
-      properties.each do |h|
-        next unless h[:ind1] == nil
-        @record.fields(h[:tag]).each do |field|
-          tag = field.tag
-          if h[:uri] == nil || field.has_subfields(%w(b q 2)) ||
-            (tag == '037' && field['c']) ||
-            (tag == '040' && field['a'] && normalize_space(field['a']).start_with?('Ca'))
-            bn_identifier = RDF::Node.uuid
-            @graph << [subject, BF[h[:property]], bn_identifier]
-            @graph << [bn_identifier, RDF.type, BF.Identifier]
-            @graph << [bn_identifier, BF.identifierScheme, h[:property]]
-            @graph << [bn_identifier, BF.identifierValue, field['a'].strip]
-            field.values_of(%w(b 2)).each do |value|
-              @graph << [bn_identifier, BF.identifierAssigner, value]
-            end
-            unless tag == '856'
-              field.values_of('q').each do |value|
-                @graph << [bn_identifier, BF.identifierQualifier, value]
-              end
-            end
-            if tag == '037'
-              field.subfiels.values_of('c').each do |value|
-                @graph << [bn_identifier, BF.identifierQualifier, value]
-              end
-            end
-          else
-            generate_simple_property(field, domain, subject)
-          end
-          field.each do |sbfield|
-            next unless %w(m y z).include?(sbfield.code)
-            bn_identifier = RDF::Node.uuid
-            @graph << [subject, BF[h[:property]], bn_identifier]
-            @graph << [bn_identifier, RDF.type, BF.Identifier]
-            handle_cancels(field, sbfield, h[:property], bn_identifier)
-          end
-        end
-      end
-    end
 
     def generate_instances(subject)
       isbn_pairs = if @record['020'] && @record['020']['a']
@@ -838,7 +975,8 @@ module Bibframe
       else
         types << INSTANCE_TYPES['leader7'][leader[7]]
       end
-      types.uniq!.delete(nil)
+      types.uniq!
+      types.delete(nil)
       types
     end
 
@@ -1044,9 +1182,9 @@ module Bibframe
     end
 
     def generate_500_notes(subject)
-      targets = @record.tags.select{|t| t.start_with?('5')}.reject{|t| %w(500 502 504 505 506 507 508 511 513 518 520 522 524 525 541 546 555).include?(t)}
+      targets = @record.tags.select{|t| t.start_with?('5')}.reject{|t| %w(500 502 504 505 506 507 508 511 513 518 522 524 525 541 546 555).include?(t)} # 520?
       if targets.size > 0
-        @record.fields(targets) do |field|
+        @record.fields(targets).each do |field|
           note = field.subfields.select{|s| %w(3 a).include?(s.code)}.map{|s| s.value}.join(' ')
           @graph << [subject, BF.note, note] unless note == ''
         end
@@ -1208,67 +1346,6 @@ module Bibframe
       end
     end
 
-    def generate_langs(subject)
-      lang_008 = normalize_space(@record['008'].value[35, 3])
-      lang_041 = []
-      @record.fields('041').each do |field|
-        lang_041 << field.values_of('a')
-      end
-      lang_041 = lang_041.flatten.uniq
-
-      lang_041.each do |lang|
-        @graph << [subject, BF.language, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{lang}")]
-      end
-      if lang_008 != '   ' && lang_008 != '|||' && (lang_041.length == 0 || lang_008 != lang_041[0])
-        @graph << [subject, BF.language, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{lang_008}")]
-      end
-
-      @record.fields('041').each do |field|
-        field.subfields.each do |sf|
-          next unless %w(b d e f g h j k m n).include?(sf.code)
-          bn_lang = RDF::Node.uuid
-          @graph << [subject, BF.language, bn_lang]
-          @graph << [bn_lang, RDF.type, BF.Language]
-          @graph << [bn_lang, BF.resourcePart, LANG_PART[sf.code]] if LANG_PART[sf.code]
-          sf.value.strip.scan(/.{3}/).each do |code|
-            @graph << [bn_lang, BF.languageOfPartUri, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{code}")]
-          end
-          @graph << [bn_lang, BF.languageSource, field['2']] if field['2']
-        end
-      end
-    end
-
-    def generate_names(field, subject)
-      resource_role = get_resource_role(field)
-      bf_class = get_bf_class(field)
-      label = get_label(field)
-
-      bn_name = RDF::Node.uuid
-      @graph << [subject, resource_role, bn_name]
-      @graph << [bn_name, RDF.type, bf_class]
-      @graph << [bn_name, BF.label, label]
-      unless field.tag == '534'
-        @graph << [bn_name, BF.authorizedAccessPoint, label]
-        auth_uri = if resolve
-          if @source == 'ndl'
-            field['0'] ? RDF::URI.new("http://id.ndl.go.jp/auth/ndlna/#{field['0']}") : nil
-          else
-            auth_id = getAuthorityID(bf_class.label, label)
-            auth_id ? RDF::URI.new(auth_id) : nil
-          end
-        end
-        if auth_uri
-         @graph << [bn_name, BF.hasAuthority, auth_uri]
-        else
-          ## TODO これは必要か（mads vocabularyを使用）
-          generate_element_list(label, bn_name)
-        end
-      end
-
-      generate_880_label(field, "name", bn_name) if field['6']
-      generate_bio_links(field, bn_name)
-    end
-
     def get_resource_role(field)
       relator_code = field['4'] ? field['4'] : field['e']
       if relator_code
@@ -1309,37 +1386,27 @@ module Bibframe
       label = clean_name_string(label)
     end
 
-    def generate_element_list(label, resource)
+    def generate_element_list(label, subject)
       bn_authority = RDF::Node.uuid
-      @graph << [resource, BF.hasAuthority, bn_authority]
+      @graph << [subject, BF.hasAuthority, bn_authority]
       @graph << [bn_authority, RDF.type, RDF::MADS.Authority]
       @graph << [bn_authority, RDF::MADS.authoritativeLabel, label]
     end
 
-    def generate_bio_links(field, resource)
-      if %w(856 859).include?(field.tag)
-        field.each do |sbfield|
-          if sbfield.code == '3' && sbfield.value =~ /contributor/i
-            generate_instance_from856(field, "person", resource)
-          end
-        end
-      end
-    end
-
     # @param [datafield] field
     # @param [String] workid: "person" or uri string
-    # @param [RDF::Resource] resource: the subject of this objects
-    def generate_instance_from856(field, workid, resource)
+    # @param [RDF::Resource] subject: the subject of this objects
+    def generate_instance_from856(field, workid, subject)
       category = if field.values_of('u').join('').include?('hdl.') && (field['3'] =~ /finding aid/i) == nil
         'instance'
+      elsif field['3'] =~ /finding aid/i
+        'findaid'
       elsif field['3'] =~ /(pdf|page view)/i
         'instance'
       elsif field.indicator1 == '4' && field.indicator2 == '0'
         'instance'
       elsif field.indicator1 == '4' && field.indicator2 == '1' && field['3'] == nil
         'instance'
-      elsif field['3'] =~ /finding aid/i
-        'findaid'
       else
         'annotation'
       end
@@ -1363,7 +1430,7 @@ module Bibframe
 
       if category == 'instance'
         bn_instance = RDF::Node.uuid
-        @graph << [resource, BF.hasInstance, bn_instance]
+        @graph << [subject, BF.hasInstance, bn_instance]
         @graph << [bn_instance, RDF.type, BF.Instance]
         @graph << [bn_instance, RDF.type, BF.Electronic]
         if field['3']
@@ -1371,54 +1438,43 @@ module Bibframe
         else
           @graph << [bn_instance, BF.label, 'Electronic Resource']
         end
-        field.each do |sbfield|
-          next unless sbfield.code == 'u'
-          if sbfield.value.include?('doi')
-            @graph << [bn_instance, BF.doi, RDF::URI.new(sbfild.value)]
-          elsif sbfield.value.include?('hdl')
-            @graph << [bn_instance, BF.hdl, RDF::URI.new(sbfild.value)]
+        field.values_of('u').each do |value|
+          if value.include?('doi')
+            @graph << [bn_instance, BF.doi, RDF::URI.new(value)]
+          elsif value.include?('hdl')
+            @graph << [bn_instance, BF.hdl, RDF::URI.new(value)]
           else
-            @graph << [bn_instance, BF.uri, RDF::URI.new(sbfild.value)]
+            @graph << [bn_instance, BF.uri, RDF::URI.new(value)]
           end
         end
-        @graph << [bn_instance, BF.instanceOf, @work]
+        @graph << [bn_instance, BF.instanceOf, subject]
         if workid != 'person' && category == 'annotation'
           @graph << [bn_instance, BF.annotates, RDF::URI.new(workid)]
         end
       else
         bn_annotation = RDF::Node.uuid
-        @graph << [resource, BF.hasAnnotation, bn_annotation]
-        bf_type =
-          case type
-          when 'table of contents'
-            BF.TableOfContents
-          when 'publisher summary'
-            BF.Summary
-          else
-            BF.Annotation
-          end
+        @graph << [subject, BF.hasAnnotation, bn_annotation]
+        bf_type = case type
+          when 'table of contents' then BF.TableOfContents
+          when 'publisher summary' then BF.Summary
+          else                          BF.Annotation
+        end
         @graph << [bn_annotation, RDF.type, bf_type]
         if field['3']
           @graph << [bn_annotation, BF.label, field['3']]
         elsif $type
           @graph << [bn_annotation, BF.label, $type]
         end
-        field.each do |sbfield|
-          code, value = sbfield.code, sbfield.value
-          if code == 'u'
-            bf_property =
-              case type
-              when 'table of contents'
-                BF.TableOfContents
-              when 'publisher summary'
-                BF.review
-              else
-                BF.annotationBody
-              end
-            @graph << [bn_annotation, bf_property, RDF::URI.new(normalize_space(value))]
-          elsif code == 'z'
-            @graph << [bn_annotation, BF.copyNote, value]
-          end
+        bf_property = case type
+          when 'table of contents' then BF.tableOfContents
+          when 'publisher summary' then BF.review
+          else                          BF.annotationBody
+        end
+        field.values_of('u').each do |value|
+          @graph << [bn_annotation, bf_property, RDF::URI.new(normalize_space(value))]
+        end
+        field.values_of('z').each do |value|
+          @graph << [bn_annotation, BF.copyNote, value]
         end
         if workid != 'person' && category == 'annotation'
           @graph << [bn_annotation, BF.annotates, RDF::URI.new(workid)]
@@ -1523,15 +1579,15 @@ module Bibframe
         elsif field['3'] then field['3']
         else nil
         end
-      places = field.subfields.select{|s| s.code=='b'}.map{|s| s.value}
-      agents = field.subfields.select{|s| s.code=='c'}.map{|s| s.value}
+      places = field.values_of('b')
+      agents = field.values_of('c')
       pdate  = field['d'] ? chop_puctuation(field['d']) : nil
       extent = field['e']
       coverage = field['m']
-      notes  = field.subfields.select{|s| s.code=='n'}.map{|s| s.value}
+      notes  = field.values_of('n')
 
       bn_work = RDF::Node.uuid
-      @graph << [subject, property, bn_work]
+      @graph << [subject, BF[property], bn_work]
       @graph << [bn_work, RDF.type, BF.Work]
       @graph << [bn_work, BF.authorizedAccessPoint, title]
       @graph << [bn_work, BF.title, title]
@@ -1623,35 +1679,6 @@ module Bibframe
         field.subfields.reject{|s| s.code == '6'}.map{|s| s.value}.join(' ')
       end
       normalize_space(label)
-    end
-
-    # generate_title: title関連トリプルの作成
-    #
-    # params [MARC::Datafield] field 作成対象のフィールド
-    # params [RDF::Resource] subject このトリプルのサブジェクト
-    def generate_title(field, domain, subject)
-      title = get_title(field)
-      element_name = get_element_name(field, domain)
-      xml_lang = (field.tag == '242' && field['y']) ? field['f'] : nil
-      title_literal = xml_lang ? RDF::Literal.new(title, :language => xml_lang.to_sym) : title
-      title_type = get_title_type(field)
-
-      bn_title = RDF::Node.uuid
-      @graph << [subject, BF.title, title_literal]
-      @graph << [subject, element_name, bn_title]
-      @graph << [bn_title, RDF.type, BF.Title]
-      if title_type
-        @graph << [bn_title, BF.titleType, title_type]
-      else
-        generate_simple_property(field, 'title', bn_title)
-        generate_880_label(field, 'title', bn_title)
-      end
-      generate_title_non_sort(field, title, element_name, bn_title)
-      unless @source == 'ndl'
-        field.values_of('0').each do |value|
-          handle_system_number(value, bn_title)
-        end
-      end
     end
 
     def get_title(field)
