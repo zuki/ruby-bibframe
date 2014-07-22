@@ -548,14 +548,14 @@ module Bibframe
         {property: 'musicNumber', sfcodes: 'n'},
         {property: 'musicVersion', sfcodes: 'o'},
         {property: 'musicKey', sfcodes: 'r'},
-        {property: 'musicVersion', sfcodes: 's'},
+        {property: 'musicVersion', sfcodes: 's'},   # TODO: edition?
       ],
       '240' => [
         {property: 'formDesignation', sfcodes: 'k'},
         {property: 'musicMediumNote', sfcodes: 'm'},
         {property: 'musicVersion', sfcodes: 'o'},
         {property: 'musicKey', sfcodes: 'r'},
-        {property: 'musicVersion', sfcodes: 's'},
+        {property: 'musicVersion', sfcodes: 's'},  # TODO: edition?
       ],
       '243' => {property: 'musicMediumNote', sfcodes: 'm'},
       '306' => {property: 'duration', sfcodes: 'a'},

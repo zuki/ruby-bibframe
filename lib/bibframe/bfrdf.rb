@@ -10,17 +10,7 @@ module Bibframe
 
     def initialize(repository, record, resolve=true, source='lc', baseuri=nil)
       @record = record
-      record_id = source == 'ndl' ? @record['015']['a'].strip : @record['001'].value.strip
-      @baseuri = if baseuri
-        baseuri
-      else
-        case source
-        when 'ndl' then 'http://id.ndl.go.jp/jpno/'
-        when 'bl'  then 'http://bnb.data.bl.uk/doc/resource/'
-        else            'http://id.loc.gov/resources/bibs/'
-        end
-      end
-      @baseuri += record_id
+      @baseuri = get_baseuri(baseuri, source)
       @graph = RDF::Graph.new(RDF::URI.new(@baseuri), {data: repository})
       @num = 0
       @resolve = resolve
@@ -29,18 +19,15 @@ module Bibframe
       parse
     end
 
-    private
-
     def parse
-      #@baseuri += @record['001'].value
       work = RDF::URI.new(@baseuri)
 
       # フィールドごとに処理できない（その1）
       @graph << [work, RDF.type, BF.Work]
-      generate_work_type(work)
-      generate_alabel(work)                              # 130  240 (245) 100 110 111
+      generate_type(work)
+      generate_accesspoint(work)        # 130  240 (245) 100 110 111
       generate_uniform_title(work)
-      # generate_alabels_work880(subject) 翻訳形のauthor+title 今のロジックでは難しい
+      # generate_accesspoints_work880(subject) 翻訳形のauthor+title 今のロジックでは難しい
       generate_langs(work)
       generate_identifiers('work', work)
 
@@ -88,6 +75,99 @@ module Bibframe
       generate_hashtable(work)
       generate_admin(work)
       generate_instances(work)
+    end
+
+    def generate_type(subject)
+      get_types.each do |type|
+        @graph << [subject, RDF.type, BF[type]]
+      end
+    end
+
+    def generate_accesspoint(subject)
+      title = nil
+      @record.fields(%w(130 240)).each do |field|
+        title = field.subfields.reject{|s| %w(0 6 8).include?(s.code)}.map{|s| s.value}.join(' ')
+        break if title != ''
+      end
+      unless title
+        title = @record['245'].subfields.select{|s| %w(a b h k n p s).include?(s.code)}.map{|s| s.value}.join(' ').sub(/\/$/, '').sub(/\.$/, '')
+      end
+      name = nil
+      @record.fields(%w(100 110 111)).each do |field|
+        name = field.subfields.select{|s| %w(a b c d q n).include?(s.code)}.map{|s| s.value}.join(' ')
+        name = clean_name_string(name)
+        break if name != ''
+      end
+      alabel = normalize_space(((name && name != '') ? (name + ' ') : '') + title)
+      @graph << [subject, BF.authorizedAccessPoint, alabel]
+    end
+
+    def generate_uniform_title(subject)
+      require 'iso-639'
+
+      field = @record['130'] ? @record['130'] : @record['240'] ? @record['240'] : nil
+      return unless field
+
+      label = field.subfields.reject{|s| %w(0 6 8).include?(s.code)}.map{|s| s.value}.join(' ')
+      @graph << [subject, BF.label, label]
+      # TODO: MADSは必要か?
+      @graph << [subject, RDF::MADS.authoritativeLabel, label]
+      generate_title_non_sort(field, label, BF.title, subject)
+
+      bn_title = RDF::Node.uuid
+      @graph << [subject, BF.workTitle, bn_title]
+      generate_simple_property(field, 'title', bn_title)
+
+      if field['0']
+        field.values_of('0').each do |value|
+          bn_id = RDF::Node.uuid
+          @graph << [subject, BF.identifier, bn_id]
+          @graph << [bn_id, RDF.type, BF.Identifier]
+          @graph << [bn_id, BF.identifierValue, value]
+          @graph << [bn_id, BF.identifierScheme, 'local']
+        end
+      end
+
+      if lang = field['l']
+        lang.chop! if lang[-1] == '.'
+        entry = ISO_639.find_by_english_name(lang)
+        if (entry)
+          @graph << [subject, BF.language, RDF::URI.new("http://id.loc.gov/vocabulary/languages/"+entry.alpha3)]
+        else
+          @graph << [subject, BF.languageNote, lang]
+        end
+
+        tlabel = field.subfields.reject{|s| %w(l 0 6 8).include?(s.code)}.map{|s| s.value}.join(' ')
+        bn_trans = RDF::Node.uuid
+        @graph << [subject, BF.translationOf, bn_trans]
+        @graph << [bn_trans, RDF.type, BF.Work]
+        @graph << [bn_trans, BF.title, tlabel]
+        generate_title_non_sort(field, tlabel, BF.title, bn_trans)
+        @graph << [bn_trans, MADS.authoritativeLabel, tlabel]
+        @graph << [bn_trans, BF.authorizedAccessPoint, tlabel]
+        if @record['100']
+          bn_agent = RDF::Node.uuid
+          @graph << [bn_trans, BF.creator, bn_agent]
+          @graph << [bn_agent, RDF.type, BF.Agent]
+          @graph << [bn_agent, BF.label, @record['100']['a']]
+        end
+      end
+    end
+
+    private
+
+    def get_baseuri(baseuri, source)
+      record_id = source == 'ndl' ? @record['015']['a'].strip : @record['001'].value.strip
+      base = if baseuri
+        baseuri
+      else
+        case source
+        when 'ndl' then 'http://id.ndl.go.jp/jpno/'
+        when 'bl'  then 'http://bnb.data.bl.uk/doc/resource/'
+        else            'http://id.loc.gov/resources/bibs/'
+        end
+      end
+      base + record_id
     end
 
     def generate_abstract(field, subject)
@@ -164,24 +244,6 @@ module Bibframe
       end
     end
 
-    def generate_alabel(subject)
-      title = nil
-      @record.fields(%w(130 240)).each do |field|
-        title = field.subfields.reject{|s| %w(0 6 8).include?(sbfield.code)}.map{|s| s.value}.join(' ')
-        break if alabel != ''
-      end
-      unless title
-        title = @record['245'].subfields.select{|s| %w(a b h k n p s).include?(s.code)}.map{|s| s.value}.join(' ').sub(/\/$/, '').sub(/\.$/, '')
-      end
-      name = nil
-      @record.fields(%w(100 110 111)).each do |field|
-        name = field.subfields.select{|s| %w(a b c d q n).include?(s.code)}.map{|s| s.value}.join(' ')
-        name = clean_name_string(name)
-        break if name != ''
-      end
-      alabel = normalize_space(((name && name != '') ? (name + ' ') : '') + title)
-      @graph << [subject, BF.authorizedAccessPoint, alabel]
-    end
 
     def generate_audience(field, subject)
       audience = field.value[22]
@@ -323,7 +385,7 @@ module Bibframe
     end
 
     def get_class_property(domain, tag)
-      return CLASSES[domain] ? CLASSES[domain][tag] : nil
+      CLASSES[domain] ? CLASSES[domain][tag] : nil
     end
 
     def generate_complex_notes(field, subject)
@@ -1635,101 +1697,9 @@ module Bibframe
       end
     end
 
-    def generate_uniform_title(subject)
-      require 'iso-639'
-
-      field = @record['130'] ? @record['130'] : @record['240'] ? @record['240'] : nil
-      return unless field
-
-      label = field.subfields.reject{|s| %w(0 6 8).include?(s.code)}.map{|s| s.value}.join(' ')
-      @graph << [subject, BF.label, label]
-      @graph << [subject, RDF::MADS.authoritativeLabel, label]
-      generate_title_non_sort(field, label, BF.title, subject)
-
-      bn_title = RDF::Node.uuid
-      @graph << [subject, BF.workTitle, bn_title]
-      generate_simple_property(field, 'title', bn_title)
-
-      if field['0']
-        field.each do |sbfield|
-          next unless sbfield.code == '0'
-          bn_id = RDF::Node.uuid
-          @graph << [subject, BF.identifier, bn_id]
-          @graph << [bn_id, RDF.type, BF.Identifier]
-          @graph << [bn_id, BF.identifierValue, sbfield.value]
-          @graph << [bn_id, BF.identifierScheme, 'local']
-        end
-      end
-
-      field.each do |sbfield|
-        bn_authority = RDF::Node.uuid
-        bn_list = RDF::Node.uuid
-        bn_element = RDF::Node.uuid
-        @graph << [subject, BF.hasAuthority, bn_authority]
-        @graph << [bn_authority, RDF.type, RDF::MADS.Authority]
-        @graph << [bn_authority, RDF::MADS.authoritativeLabel, label]
-        @graph << [bn_authority, RDF::MADS.elementList, bn_list]
-        @graph << [bn_list, RDF.first, bn_element]
-        @graph << [bn_list, RDF.rest, RDF.nil]
-        value = clean_title_string(sbfield.value)
-        case sbfield.code
-        when 'a'
-          @graph << [bn_element, RDF.type, RDF::MADS.MainTitleElement]
-          @graph << [bn_element, RDF::MADS.elementValue, value]
-        when 'p'
-          @graph << [bn_element, RDF.type, RDF::MADS.PartNameElement]
-          @graph << [bn_element, RDF::MADS.elementValue, value]
-        when 'l'
-          @graph << [bn_element, RDF.type, RDF::MADS.LanguageElement]
-          @graph << [bn_element, RDF::MADS.elementValue, value]
-        when 's'
-          @graph << [bn_element, RDF.type, RDF::MADS.TitleElement]
-          @graph << [bn_element, RDF::MADS.elementValue, value]
-        when 'k',
-          @graph << [bn_element, RDF.type, RDF::MADS.GenreFormElement]
-          @graph << [bn_element, RDF::MADS.elementValue, value]
-        when 'd', 'f'
-          @graph << [bn_element, RDF.type, RDF::MADS.TemporalElement]
-          @graph << [bn_element, RDF::MADS.elementValue, value]
-        else
-          @graph << [bn_element, RDF.type, RDF::MADS.TitleElement]
-          @graph << [bn_element, RDF::MADS.elementValue, value]
-        end
-      end
-
-      if lang = field['l']
-        lang.chop! if lang[-1] == '.'
-        entry = ISO_639.find_by_english_name(lang)
-        if (entry)
-          @graph << [subject, BF.language, RDF::URI.new("http://id.loc.gov/vocabulary/languages/"+entry.alpha3)]
-        else
-          @graph << [subject, BF.languageNote, lang]
-        end
-
-        tlabel = field.subfields.reject{|s| %w(l 0 6 8).include?(s.code)}.map{|s| s.value}.join(' ')
-        bn_trans = RDF::Node.uuid
-        @graph << [subject, BF.translationOf, bn_trans]
-        @graph << [bn_trans, RDF.type, BF.Work]
-        @graph << [bn_trans, BF.title, tlabel]
-        title_non_sort = get_title_non_sort(field, tlabel)
-        @graph << [bn_trans, BF.title, title_non_sort] if title_non_sort
-        @graph << [bn_trans, BF.authoritativeLabel, tlabel]
-        if @record['100']
-          bn_agent = RDF::Node.uuid
-          @graph << [bn_trans, BF.creator, bn_agent]
-          @graph << [bn_agent, RDF.type, BF.Agent]
-          @graph << [bn_agent, BF.label, @record['100']['a']]
-        end
-      end
-    end
 
 
 
-    def generate_work_type(subject)
-      get_types.each do |type|
-        @graph << [subject, RDF.type, BF[type]]
-      end
-    end
 
     # hese properties are transformed as either literals or appended to the @uri parameter inside their @domain
     #
@@ -1743,15 +1713,14 @@ module Bibframe
       tag, ind1, ind2 = field.tag, field.indicator1, field.indicator2
       return unless SIMPLE_PROPERTIES[domain] && SIMPLE_PROPERTIES[domain][tag]
       hs = SIMPLE_PROPERTIES[domain][tag]
-      nodes = case hs
-        when is_a?(Array)
+      nodes = if hs.is_a?(Array)
           hs.select{|n| (n[:ind1] == nil || n[:ind1] == ind1) && (n[:ind2] == nil || n[:ind2] == ind2)}
-        when is_a?(Hash)
+        elsif hs.is_a?(Hash)
           (hs[:ind1] == nil || hs[:ind1] == ind1) && (hs[:ind2] == nil || hs[:ind2] == ind2) ? [hs] : []
         else
           []
         end
-      return nodes.size == 0
+      return if nodes.size == 0
 
       nodes.each do |node|
         # {domain: "instance", property: "$2", tag: "024", sfcodes: "a", ind1: "7", group: "identifiers"}
@@ -1771,7 +1740,6 @@ module Bibframe
           value = field.subfields.select{|sf| codes.include?(sf.code) }.map{|sf| sf.value}.join(stringjoin)
           values << startwith + value if value != ''
         end
-
         if node[:group] == 'identifiers'
           values.each do |value|
             if value.start_with?('(OCoLC)')
