@@ -6,19 +6,32 @@ module Bibframe
 
     private
 
+    # 指定した文字が末尾にある場合に削除
+    # @param [String] value ID値が含まれる文字列
+    # @param [String] punc 削除すべき文字
+    # @return [String] 処理済みの文字列
     def chop_puctuation(value, punc)
       value[-1] == punc ? value.chop : value
     end
 
+    # 文字列からID値として不要な文字を削除
+    # @param [String] value ID値が含まれる文字列
+    # @return [String] 処理済みの文字列
     def clean_id(value)
       value = value.sub(/\(OCoLC\)/, '').sub(/^(ocm|ocn)/, '').sub(/\(DLC\)/, '')
       clean_string(value)
     end
 
+    # 文字列から名前として不要な文字を削除
+    # @param [String] value ID値が含まれる文字列
+    # @return [String] 処理済みの文字列
     def clean_name_string(value)
       value.sub(/\[from old catalog\]/i, '').sub(/,$/, '')
     end
 
+    # 文字列から不要な文字を削除
+    # @param [String] value ID値が含まれる文字列
+    # @return [String] 処理済みの文字列
     def clean_string(value)
       value = value.gsub(/from old catalog/i, '').gsub(/[\[\];]+/, '').gsub(/ :/, '')
                    .sub(/,$/, '')
@@ -27,11 +40,16 @@ module Bibframe
       normalize_space(value)
     end
 
+    # 文字列からタイトルとして不要な文字を削除
+    # @param [String] value ID値が含まれる文字列
+    # @return [String] 処理済みの文字列
     def clean_title_string(title)
       clean_string(title).gsub(/\[sound recording\]/i, '')
                          .gsub(/\[microform\]/i, '').sub(/\/$/, '')
     end
 
+    # リソース種別を判定する
+    # @return [Array] 該当するリソース種別（String）の配列
     def get_types
       return @types if @types.size > 0
 
@@ -83,17 +101,20 @@ module Bibframe
       end
     end
 
-    def handle_system_number(sysnum, resource)
+    # 各種システム番号から BF.systemNumber トリプルを作成する
+    # @param [String] sysnum システム番号
+    # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
+    def handle_system_number(sysnum, subject)
       sysnum = normalize_space(sysnum)
       if sysnum.start_with?('(DE-588)')
         id = normalize_space(sysnum.sub(/\(DE-588\)/, ''))
-        @graph << [resource, BF.hasAuthority, RDF::URI.new('http://d-nb.info/gnd/'+id)]
+        @graph << [subject, BF.hasAuthority, RDF::URI.new('http://d-nb.info/gnd/'+id)]
       elsif sysnum.include?('(OCoLC)')
         id = clean_string(sysnum.sub(/\(OCoLC\)/, '')).gsub(/^(ocm|ocn)/, '')
-        @graph << [resource, BF.systemNumber, RDF::URI.new('http://www.worldcat.org/oclc/'+id)]
+        @graph << [subject, BF.systemNumber, RDF::URI.new('http://www.worldcat.org/oclc/'+id)]
       else
         bn_identifier = RDF::Node.uuid
-        @graph << [resource, BF.systemNumber, bn_identifier]
+        @graph << [subject, BF.systemNumber, bn_identifier]
         @graph << [bn_identifier, RDF.type, BF.Identifier]
         @graph << [bn_identifier, BF.identifierValue, sysnum]
       end
