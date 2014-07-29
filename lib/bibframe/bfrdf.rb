@@ -8,16 +8,28 @@ module Bibframe
 
     attr_reader :graph, :source, :resolve, :baseuri
 
-    def initialize(repository, record, resolve=true, source='lc', baseuri=nil)
+    # このクラスの初期化メソッド
+    # @param [MARC::Record] record 変換するMARCレコード
+    # @param [boolean] resolve 著者、件名、地名等の典拠IDを付与するか否か。デフォルトはしない（false）
+    # @param [String] source MARCレコードの作成機関（現在認識するのは ('lc'|'ndl'|'bl')。デフォルトは 'lc'
+    # @param [String] baseuri レコードIDURIのベースとなるURL文字列。指定がない場合は、sourceから自動設定。
+    # @param [RDF::Repository] repository このクラスで作成するグラフを名前付きにする場合に指定する。デフォルトはnil
+    # @return [Bibframe::BFRDF] このクラスのオブジェクト
+    def initialize(record, resolve: false, source: 'lc', baseuri: nil, repository: nil, **other)
       @record = record
       @baseuri = get_baseuri(baseuri, source)
-      @graph = RDF::Graph.new(RDF::URI.new(@baseuri), {data: repository})
+      if repository  # named graph
+        @graph = RDF::Graph.new(RDF::URI.new(@baseuri), {data: repository})
+      else
+        @graph = RDF::Graph.new()
+      end
       @resolve = resolve
       @source = source
       @types = []
       parse
     end
 
+    # MARCレコードをパースしてRDFグラフを作成する
     def parse
       work = RDF::URI.new(@baseuri)
 
