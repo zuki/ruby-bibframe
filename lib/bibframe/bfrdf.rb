@@ -12,7 +12,6 @@ module Bibframe
       @record = record
       @baseuri = get_baseuri(baseuri, source)
       @graph = RDF::Graph.new(RDF::URI.new(@baseuri), {data: repository})
-      @num = 0
       @resolve = resolve
       @source = source
       @types = []
@@ -237,11 +236,19 @@ module Bibframe
             generate_simple_property(field, domain, subject)
           end
           field.each do |sbfield|
-            next unless %w(m y z).include?(sbfield.code)
-            bn_identifier = RDF::Node.uuid
-            @graph << [subject, BF[h[:property]], bn_identifier]
-            @graph << [bn_identifier, RDF.type, BF.Identifier]
-            handle_cancels(field, sbfield, h[:property], bn_identifier)
+            if (%w(010 015 016 017 020 022 024 027 030 088).include?(field.tag) && sbfield.code == 'z') ||
+               (field.tag == '022' && %w(m y).include?(sbfield.code))
+              bn_identifier = RDF::Node.uuid
+              @graph << [subject, BF[h[:property]], bn_identifier]
+              @graph << [bn_identifier, RDF.type, BF.Identifier]
+              @graph << [bn_identifier, BF.identifierScheme, h[:property]]
+              @graph << [bn_identifier, BF.identifierValue, normalize_space(sbfield.value)]
+              if field.tag == '022' && sbfield.code == 'y'
+                @graph << [bn_identifier, BF.identifierStatus, 'incorrect']
+              else
+                @graph << [bn_identifier, BF.identifierStatus, 'canceled/invalid']
+              end
+            end
           end
         end
       end

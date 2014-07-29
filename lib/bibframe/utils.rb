@@ -83,24 +83,6 @@ module Bibframe
       @types = @types.flatten.uniq
     end
 
-    def get_uri(type)
-      @num += 1
-      RDF::URI.new(@baseuri + '-' + type + @num.to_s)
-    end
-
-    def handle_cancels(field, sbfield, scheme, subject)
-      if (%w(010 015 016 017 020 022 024 027 030 088).include?(field.tag) && sbfield.code == 'z') || (field.tag == '022' && %w(m y).include?(sbfield.code))
-        @graph << [subject, RDF.type, BF.Identifier]
-        @graph << [subject, BF.identifierScheme, scheme]
-        @graph << [subject, BF.identifierValue, normalize_space(sbfield.value)]
-        if field.tag == '022' && sbfield.code == 'y'
-          @graph << [subject, BF.identifierStatus, 'incorrect']
-        else
-          @graph << [subject, BF.identifierStatus, 'canceled/invalid']
-        end
-      end
-    end
-
     # 各種システム番号から BF.systemNumber トリプルを作成する
     # @param [String] sysnum システム番号
     # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
@@ -120,10 +102,17 @@ module Bibframe
       end
     end
 
+    # 文字列中の空白の正規化
+    # @param [String] value 正規化する文字列
+    # @return [String] 正規化された文字列
     def normalize_space(value)
       value.gsub(/\s+/, ' ').strip
     end
 
+    # 典拠IDの取得
+    # @param [String] lname データ種別
+    # @param [String] label 典拠値
+    # @return [String|nil] 典拠ID。該当する典拠データがない場合はnil
     def getAuthorityID(lname, label)
       return unless %w(Person Organization Place Meeting Family Topic TemporalConcept).include? lname
 
@@ -142,6 +131,9 @@ module Bibframe
       end
     end
 
+    # 典拠ID取得のためのHTTP処理
+    # @param [String] 典拠ID取得URL文字列
+    # @return [Net::HTTPResponse] HTTPレスポンス
     def getResponse(url_str)
       url = URI.parse(url_str)
       req = Net::HTTP::Get.new(url.path)
