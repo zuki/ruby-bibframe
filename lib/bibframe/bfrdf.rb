@@ -788,8 +788,8 @@ module Bibframe
           value = field.subfields.select{|sf| codes.include?(sf.code) }.map{|sf| sf.value}.join(stringjoin)
           values << startwith + value if value != ''
         end
-        if node[:group] == 'identifiers'
-          values.each do |value|
+        values.each do |value|
+          if node[:group] == 'identifiers'
             if value.start_with?('(OCoLC)')
               oclcid = value.sub(/\(OCoLC\)/, '').sub(/^(ocm|ocn)/, '')
               @graph << [subject, BF[node[:property]], RDF::URI.new(node[:uri]+oclcid)]
@@ -800,13 +800,9 @@ module Bibframe
               @graph << [bn_identifier, BF.identifierValue, value.strip]
               @graph << [bn_identifier, BF.identifierScheme, node[:property]]
             end
-          end
-        elsif node[:uri] == nil
-          values.each do |value|
+          elsif node[:uri] == nil
             @graph << [subject, BF[node[:property]], value]
-          end
-        elsif node[:uri].include?('loc.gov/vocabulary/organizations')
-          values.each do |value|
+          elsif node[:uri].include?('loc.gov/vocabulary/organizations')
             if value.length < 10 && !value.include?(' ')
               @graph << [subject, BF[node[:property]], RDF::URI.new(node[:uri]+value.gsub(/-/, ''))]
             else
@@ -815,13 +811,9 @@ module Bibframe
               @graph << [subject, BF[node[:property]], nd_organization]
               @graph << [nd_organization, BF.label, value]
             end
-          end
-        elsif node[:property] == 'lccn'
-          values.each do |value|
+          elsif node[:property] == 'lccn'
             @graph << [subject, BF[node[:property]], RDF::URI.new(node[:uri]+value.gsub(/ /, ''))]
-          end
-        else
-          values.each do |value|
+          else
             @graph << [subject, BF[node[:property]], RDF::URI.new(node[:uri]+value)]
           end
         end
