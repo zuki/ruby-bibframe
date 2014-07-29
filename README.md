@@ -19,17 +19,21 @@ bundleコマンドを実行する:
 ## 利用法
 
 ````
+require 'rdf'
 require 'marc'
 require 'bibframe'
+require 'rdf/rdfxml'
 
 reader = MARC::XMLReader.new('/path/to/MARCXML.xml')
-bf = Bibframe::Repository.new(reader)
-bf.to_ttl('/path/to/output.ttl')
-#bf.to_xmlrdf('/path/to/output.rdf')
-#bf.to_nt('/path/to/output.nt')
-#bf.to_nq('/path/to/output.nq')
-#bf.to_json('/path/to/output.json')
-#bf.to_jsonld('/path/to/output.jsonld')
+repo = RDF::Repository.new
+# 典拠IDを付加し、名前付きグラフにする
+for record in reader
+	repo << Bibframe::BFRDF(record, resolve: true, repository: repo).graph
+end
+
+RDF::RDFXML::Writer.open('/path/to/output.rdf') do |writer|
+  writer << repo
+end
 ````
 
 ## TODO
