@@ -163,31 +163,33 @@ module Bibframe
     # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
     def generate_langs(subject)
       lang_008 = normalize_space(@record['008'].value[35, 3])
+      lang_008 = nil if (lang_008 == '   ' || lang_008 == '|||')
       lang_041 = []
-      @record.fields('041').each do |field|
-        lang_041 << field.values_of('a')
-      end
-      lang_041 = lang_041.flatten.uniq
-
-      lang_041.each do |lang|
-        @graph << [subject, BF.language, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{lang}")]
-      end
-      if lang_008 != '   ' && lang_008 != '|||' && (lang_041.length == 0 || lang_008 != lang_041[0])
-        @graph << [subject, BF.language, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{lang_008}")]
-      end
-
+      bn_lang = nil
       @record.fields('041').each do |field|
         field.subfields.each do |sf|
-          next unless %w(b d e f g h j k m n).include?(sf.code)
-          bn_lang = RDF::Node.uuid
-          @graph << [subject, BF.language, bn_lang]
-          @graph << [bn_lang, RDF.type, BF.Language]
-          @graph << [bn_lang, BF.resourcePart, LANG_PART[sf.code]] if LANG_PART[sf.code]
-          sf.value.strip.scan(/.{3}/).each do |code|
-            @graph << [bn_lang, BF.languageOfPartUri, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{code}")]
+          code, value = sf.code, sf.value
+          case code
+          when 'a'
+            lang_041 << value
+            bn_lang = RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{value}")
+            @graph << [subject, BF.language, bn_lang]
+          when /(b|d|e|f|g|h|j|k|m|n)/
+            bn_lang = RDF::Node.uuid
+            @graph << [subject, BF.language, bn_lang]
+            @graph << [bn_lang, RDF.type, BF.Language]
+            @graph << [bn_lang, BF.resourcePart, LANG_PART[code]] if LANG_PART[code]
+            value.strip.scan(/.{3}/).each do |lang|
+              @graph << [bn_lang, BF.languageOfPartUri, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{lang}")]
+            end
+          when '2'
+            @graph << [bn_lang, BF.languageSource, value]
           end
-          @graph << [bn_lang, BF.languageSource, field['2']] if field['2']
         end
+      end
+
+      if lang_008 && (lang_041.length == 0 || lang_008 != lang_041[0])
+        @graph << [subject, BF.language, RDF::URI.new("http://id.loc.gov/vocabulary/languages/#{lang_008}")]
       end
     end
 
