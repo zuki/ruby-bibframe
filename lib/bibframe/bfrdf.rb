@@ -33,59 +33,65 @@ module Bibframe
     def parse
       work = RDF::URI.new(@baseuri)
 
-      # フィールドごとに処理できない（その1）
-      @graph << [work, RDF.type, BF.Work]
-      generate_types(work)
-      generate_accesspoints(work)        # 130  240 (245) 100 110 111
-      generate_uniform_title(work)
-      # generate_accesspoints_work880(subject) 翻訳形のauthor+title 今のロジックでは難しい
-      generate_langs(work)
-      generate_identifiers('work', work)
+      begin
+        # フィールドごとに処理できない（その1）
+        @graph << [work, RDF.type, BF.Work]
+        generate_types(work)
+        generate_accesspoints(work)        # 130  240 (245) 100 110 111
+        generate_uniform_title(work)
+        # generate_accesspoints_work880(subject) 翻訳形のauthor+title 今のロジックでは難しい
+        generate_langs(work)
+        generate_identifiers('work', work)
 
-      # フィールド毎に処理可能
-      @record.each do |field|
-        case field.tag
-        when '502'
-          generate_dissertations(field, work)
-        when /(100|110|111|700|710|711|720)/
-          generate_names(field, work)
-        when /(243|245|247)/
-          generate_title(field, 'work', work)
-        when '033'
-          generate_events(field, work)
-        when '521'
-          generate_audience_521(field, work)
-        when '555'
-          generate_findaids(field, work)
-        when '520'
-          generate_abstract(field, work)
-        when '008'
-          generate_audience(field, work)
-          generate_genre(field, 'Work', work)
-        when '255'
-          generate_cartography(field, work)
-        when /(600|610|611|648|650|651|654|655|656|657|658|662|653|751|752)/
-          generate_subjects(field, work)
-        when '043'
-          generate_gacs(field, work)
-        when /(060|061|086|050|055|070|080|082|083|084|086)/
-          generate_classes(field, 'work', work)
-        when '505'
-          generate_complex_notes(field, work)
-        when /(400|410|411|430|440|490|533|534|630|700|710|711|720|730|740|760|762|765|767|770|772|773|774|775|776|777|780|785|786|787|800|810|811|830)/
-          generate_related_works(field, 'work', work)
-        when /(856|859)/
-          generate_from_856(field, work)
+        # フィールド毎に処理可能
+        @record.each do |field|
+          case field.tag
+          when '502'
+            generate_dissertations(field, work)
+          when /(100|110|111|700|710|711|720)/
+            generate_names(field, work)
+          when /(243|245|247)/
+            generate_title(field, 'work', work)
+          when '033'
+            generate_events(field, work)
+          when '521'
+            generate_audience_521(field, work)
+          when '555'
+            generate_findaids(field, work)
+          when '520'
+            generate_abstract(field, work)
+          when '008'
+            generate_audience(field, work)
+            generate_genre(field, 'Work', work)
+          when '255'
+            generate_cartography(field, work)
+          when /(600|610|611|648|650|651|654|655|656|657|658|662|653|751|752)/
+            generate_subjects(field, work)
+          when '043'
+            generate_gacs(field, work)
+          when /(060|061|086|050|055|070|080|082|083|084|086)/
+            generate_classes(field, 'work', work)
+          when '505'
+            generate_complex_notes(field, work)
+          when /(400|410|411|430|440|490|533|534|630|700|710|711|720|730|740|760|762|765|767|770|772|773|774|775|776|777|780|785|786|787|800|810|811|830)/
+            generate_related_works(field, 'work', work)
+          when /(856|859)/
+            generate_from_856(field, work)
+          end
+          # フィールドが設定ファイルで指定されており、独立に処理可能
+          generate_simple_property(field, "work", work)
         end
-        # フィールドが設定ファイルで指定されており、独立に処理可能
-        generate_simple_property(field, "work", work)
-      end
 
-      # フィールドごとに処理できない（その2）
-      @graph << [work, BF.derivedFrom, RDF::URI.new(@baseuri)]
-      generate_hashable(work)
-      generate_admin(work)
-      generate_instances(work)
+        # フィールドごとに処理できない（その2）
+        @graph << [work, BF.derivedFrom, RDF::URI.new(@baseuri)]
+        generate_hashable(work)
+        generate_admin(work)
+        generate_instances(work)
+      rescue => e
+        puts "record: #{baseuri}, #{@record}"
+        p e.message
+        puts e.backtrace.join("\n")
+      end
     end
 
     # レコード種別に関するトリプルを作成
@@ -640,12 +646,12 @@ module Bibframe
 
       notes.each do |nt|
         uri_work = nt[:uri] ? nt[:uri] : RDF::Node.uuid
-        @graph << [subject, BF.contains, uri_work]
+        @graph << [subject, BF.hasPart, uri_work]  # BF.contains is Deleted, duplicated hasPart.
         @graph << [uri_work, RDF.type, BF.Work]
         @graph << [uri_work, BF.title, nt[:title]]
         case nt[:element]
         when 'note'
-          @graph << [uri_work, BF.note, value]
+          @graph << [uri_work, BF.note, nt[:value]]
         when 'creator'
           nt[:value].each do |value|
             bn_agent = RDF::Node.uuid
@@ -848,12 +854,12 @@ module Bibframe
     # @param [String] source 変換元のMARC提供機関。現在、(lc|ndl|bl)を用意している。デフォルトは'lc'
     # @param [String] bfrdfレコードのbaseuriとして使用するuri文字列
     def get_baseuri(baseuri=nil, source='lc')
-      record_id = source == 'ndl' ? @record['015']['a'].strip : @record['001'].value.strip
+      record_id = @record['001'].value.strip
       base = if baseuri
         baseuri
       else
         case source
-        when 'ndl' then 'http://id.ndl.go.jp/jpno/'
+        when 'ndl' then 'http://id.ndl.go.jp/bib/'
         when 'bl'  then 'http://bnb.data.bl.uk/doc/resource/'
         else            'http://id.loc.gov/resources/bibs/'
         end
@@ -1442,12 +1448,12 @@ module Bibframe
         end
         @record.fields('362').each do |field|
           supplement = field['a']
-          if field.indicator1 == '0' && supplement.includes?('-')
+          if field.indicator1 == '0' && supplement.include?('-')
             first, last = supplement.split('-')
-            @graph << [suject, BF.serialFirstIssue, normalize_space(first)] if first
-            @graph << [suject, BF.serialLastIssue, normalize_space(last)] if last
+            @graph << [subject, BF.serialFirstIssue, normalize_space(first)] if first
+            @graph << [subject, BF.serialLastIssue, normalize_space(last)] if last
           else
-            @graph << [suject, BF.serialFirstIssue, normalize_space(supplement)] if supplement
+            @graph << [subject, BF.serialFirstIssue, normalize_space(supplement)] if supplement
           end
         end
         @record.fields('351').each do |field|
@@ -1881,7 +1887,7 @@ module Bibframe
       return unless field['6'] && field['6'].start_with?('880')
 
       target = field.tag + '-' + field['6'].split('-')[1][0, 2]
-      target_field = @record.fields('880').find {|f| f['6'].start_with?(target)}
+      target_field = @record.fields('880').find {|f| f['6'] && f['6'].start_with?(target)}
       return unless target_field
 
       scr = target_field['6'].split('/')[1]
@@ -1940,7 +1946,13 @@ module Bibframe
 
     def get_xml_lang(scr, lang)
       entry = ISO_639.find(lang)
-      xml_lang = entry.alpha2 ? entry.alpha2 : entry.alpha3
+      xml_lang = if entry
+        entry.alpha2 ? entry.alpha2 : entry.alpha3
+      elsif @source == 'ndl'
+        'ja'
+      else
+        'en'
+      end
       script  =
         case scr
         when '(3' then 'arab'
