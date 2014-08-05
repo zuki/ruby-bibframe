@@ -6,15 +6,11 @@
 
 以下をアプリケーションのGemfileに追加する:
 
-    gem 'ruby-bibframe'
+    gem 'ruby-bibframe', :git => "https://github.com/zuki/ruby-bibframe.git"
 
 bundleコマンドを実行する:
 
     $ bundle
-
-あるいは、次のコマンドでインストールする:
-
-    $ gem install ruby-bibframe
 
 ## 利用法
 
