@@ -1154,15 +1154,23 @@ module Bibframe
 
     def get_instance_types
       types = []
-      cf007 = @record['007'] ? @record['007'].value[0] : nil
-      types << INSTANCE_TYPES['cf007'][cf007]
-      @record.fields('336').each do |field|
-        types << INSTANCE_TYPES['336a'][field['a']]
-        types << INSTANCE_TYPES['336b'][field['b']]
+
+      if @record['007']
+        cf007 = @record['007'].value
+        types << INSTANCE_TYPES['cf007'][cf007] if INSTANCE_TYPES['cf007'].has_key?(cf007)
       end
+
+      @record.fields('336').each do |field|
+        %w(a b).each do |code|
+          key = 'sf336' + code
+          value = field[code]
+          types << INSTANCE_TYPES[key][value] if value && INSTANCE_TYPES[key].has_key?(value)
+        end
+      end
+
       leader = @record.leader
-      types << INSTANCE_TYPES['leader6'][leader[6]]
-      types << INSTANCE_TYPES['leader8'][leader[8]]
+      @types << INSTANCE_TYPES['leader6'][leader[6]] if INSTANCE_TYPES['leader6'].has_key?(leader[6])
+      @types << INSTANCE_TYPES['leader8'][leader[8]] if INSTANCE_TYPES['leader8'].has_key?(leader[8])
       case leader[7]
       when 'a', 'm'
         if leader[19] == 'a'
@@ -1171,11 +1179,10 @@ module Bibframe
           types << 'Monograph'
         end
       else
-        types << INSTANCE_TYPES['leader7'][leader[7]]
+        types << INSTANCE_TYPES['leader7'][leader[7]] if INSTANCE_TYPES['leader7'].has_key?(leader[7])
       end
-      types.uniq!
-      types.delete(nil)
-      types
+
+      types.flatten.uniq
     end
 
     def generate_publication(field, subject)
