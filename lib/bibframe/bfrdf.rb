@@ -26,7 +26,7 @@ module Bibframe
       @resolve = resolve
       @source = source
       @types = []
-      parse
+      #parse
     end
 
     # MARCレコードをパースしてRDFグラフを作成する
