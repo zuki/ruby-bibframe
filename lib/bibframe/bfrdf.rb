@@ -517,7 +517,7 @@ module Bibframe
     def generate_classes(field, domain, subject)
       case field.tag
       when /(060|061)/
-        field.values_of('a') do |value|
+        field.values_of('a').each do |value|
           classification = normalize_space(value.split(' ')[0])
           @graph << [subject, BF.classificationNlm, RDF::URI.new("http://nlm.example.org/classification/#{classification}")]
         end

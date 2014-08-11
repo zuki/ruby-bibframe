@@ -63,7 +63,7 @@ module Bibframe
       %w(336 337).each do |tag|
         @record.fields(tag).each do |field|
           %w(a b).each do |code|
-            field.values_of(code) do |value|
+            field.values_of(code).each do |value|
               key = ('sf' + tag + code).to_sym
               value = value.downcase
               @types << RESOURCE_TYPES[key][value] if RESOURCE_TYPES[key].has_key?(value)
