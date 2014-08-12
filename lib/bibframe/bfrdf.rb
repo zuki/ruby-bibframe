@@ -361,11 +361,11 @@ module Bibframe
     # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
     def generate_events(field, subject)
       bn_event = RDF::Node.uuid
-      @graph << [subject, BF.envet, bn_event]
+      @graph << [subject, BF.event, bn_event]
       @graph << [bn_event, RDF.type, BF.Event]
       subfields = field.subfields
       subfields.each_index do |i|
-        case subfield[i].code
+        case subfields[i].code
         when 'a'
           @graph << [bn_event, BF.eventDate, get_event_date(field)]
         when 'b'
@@ -952,18 +952,30 @@ module Bibframe
       when '1'
         field.values_of('a').join(', ')
       else
-        RDF::Literal.new(field['a'], :datatype => RDF::XSD.dateTime)
+        value = field['a']
+        case value
+        when /\A\d{4}-\d{2}-\d{2}H\d{2}:\d{2}:\d{2}/
+          RDF::Literal.new(value, :datatype => RDF::XSD.dateTime)
+        when /\A\d{4}-\d{2}-\d{2}\Z/
+          RDF::Literal.new(value, :datatype => RDF::XSD.date)
+        when /\A\d{4}-\d{2}\Z/
+          RDF::Literal.new(value, :datatype => RDF::XSD.gYearMonth)
+        when /\A\d{4}\Z/
+          RDF::Literal.new(value, :datatype => RDF::XSD.gYear)
+        else
+          value
+        end
       end
     end
 
     def get_event_place(field, pos)
-      subcode = if field.subfields[pos+1] && field.subfields[pos+1] == 'c'
+      subcode = if field.subfields[pos+1] && field.subfields[pos+1].code == 'c'
         field.subfields[pos+1].value
       else
         nil
       end
       base = 'http://id.loc.gov/authorities/classification/G' +
-        nomalize_space(field.subfields[i].value)
+        normalize_space(field.subfields[pos].value)
       uri = subcode ? base + subcode : base
       RDF::URI.new(uri)
     end
