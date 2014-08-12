@@ -1952,6 +1952,8 @@ module Bibframe
     end
 
     def get_xml_lang(scr, lang)
+      require 'iso-639'
+
       entry = ISO_639.find(lang)
       xml_lang = if entry
         entry.alpha2 ? entry.alpha2 : entry.alpha3
