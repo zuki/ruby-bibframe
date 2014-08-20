@@ -68,8 +68,8 @@ module Bibframe
       '055' => 'classificationLcc',
       '060' => 'classificationNlm',
       '061' => 'classificationNlm',
-      '070' => 'classificationLcc',
-      '071' => 'classificationLcc',
+      '070' => 'classification',
+      '071' => 'classification',
       '080' => 'classificationUdc',
       '082' => 'classificationDdc',
       '083' => 'classificationDdc',
@@ -386,12 +386,7 @@ module Bibframe
       ]
     },
     'classification' => {
-      '082' => [
-        {property: 'classificationEdition', sfcodes: ''},
-      ],
       '083' => [
-        {property: 'classificationEdition', sfcodes: ''},
-        {property: 'classificationAssigner', sfcodes: ''},
         {property: 'classificationSpanEnd', sfcodes: 'c'},
         {property: 'classificationTable', sfcodes: 'z'},
         {property: 'classificationTableSeq', sfcodes: 'y'},

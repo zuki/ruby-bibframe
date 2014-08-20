@@ -69,7 +69,7 @@ module Bibframe
             generate_subjects(field, work)
           when '043'
             generate_gacs(field, work)
-          when /(060|061|086|050|055|070|080|082|083|084|086)/
+          when /(050|055|060|061|070|080|082|083|084|086)/
             generate_classes(field, 'work', work)
           when '505'
             generate_complex_notes(field, work)
@@ -524,20 +524,22 @@ module Bibframe
           @graph << [subject, BF.classificationNlm, RDF::URI.new("http://nlm.example.org/classification/#{classification}")]
         end
       when '086'
-        return unless field['z']
-        bn_class = RDF::Node.uuid
-        @graph << [subject, BF.classification, bn_class]
-        @graph << [bn_class, RDF.type, BF.Classification]
-        if field.indicator1 == ' ' && field['2']
-          @graph << [bn_class, BF.classificationScheme, field['2']]
-        elsif field.indicator1 == '0'
-          @graph << [bn_class, BF.classificationScheme, 'SUDOC']
-        elsif field.indicator1 == '1'
-          @graph << [bn_class, BF.classificationScheme, 'Government of Canada classification']
+        field.each do |sf|
+          next unless sf.code == 'a' || sf.code == 'z'
+          bn_class = RDF::Node.uuid
+          @graph << [subject, BF.classification, bn_class]
+          @graph << [bn_class, RDF.type, BF.Classification]
+          if field.indicator1 == ' ' && field['2']
+            @graph << [bn_class, BF.classificationScheme, field['2']]
+          elsif field.indicator1 == '0'
+            @graph << [bn_class, BF.classificationScheme, 'SUDOC']
+          elsif field.indicator1 == '1'
+            @graph << [bn_class, BF.classificationScheme, 'Government of Canada classification']
+          end
+          @graph << [bn_class, BF.classificationNumber, sf.value]
+          @graph << [bn_class, BF.classificationStatus, 'canceled/invalid'] if sf.code == 'z'
         end
-        @graph << [bn_class, BF.classificationNumber, field['z']]
-        @graph << [bn_class, BF.classificationStatus, 'canceled/invalid']
-      when /(050|055|070|080|082|083|084|086)/
+      when /(050|055|070|080|082|083|084)/
         field.each do |sf|
           next unless sf.code == 'a'
           tag, ind1, ind2 = field.tag, field.indicator1, field.indicator2
@@ -548,7 +550,7 @@ module Bibframe
           end
           next unless classification
           if (field.codes.size == 1 && field['a']) ||
-             (field.codes().size == 2 && field['b'])
+             (field.codes.size == 2 && field['b'])
             property = get_class_property(domain, tag)
             property = 'classification' unless property
             case property
@@ -561,12 +563,7 @@ module Bibframe
               @graph << [subject, BF[property], bn_class]
               @graph << [bn_class, RDF.type, BF.Classification]
               @graph << [bn_class, BF.classificationNumber, classification]
-              scheme = if tag == '086' and ind1 = ' ' && field['2'] then field['2']
-                elsif tag == '086' and ind1 == '0' then 'SUDOC'
-                elsif tag == '086' and ind1 == '1' then 'Government of Canada classification'
-                else property
-                end
-              @graph << [bn_class, BF.classificationScheme, scheme]
+              @graph << [bn_class, BF.classificationScheme, property]
             end
           else
             assigner = if tag == '050' && ind2 == '0' then 'dlc'
@@ -583,7 +580,7 @@ module Bibframe
              when '060' then 'nlm'
              when '080' then 'udc'
              when '082', '083' then 'ddc'
-             when '084', '086'
+             when '084'
               if field['2'] then field['2'] else nil end
              else nil
             end
@@ -605,7 +602,7 @@ module Bibframe
                 elsif %w(082 083).include?(tag) && field['2'] then field['2']
                 else nil
                 end
-              generate_property_from_text(tag, '', edition, 'classification', bn_class) if edition
+              @graph << [bn_class, BF.classificationEdition, edition] if edition
             end
             generate_simple_property(field, 'classification', bn_class) if tag == '083'
           end
@@ -809,6 +806,8 @@ module Bibframe
         codes = node[:sfcodes] ? node[:sfcodes] : 'a'
         values = []
         case codes.length
+        when 0
+          next
         when 1
           field.values_of(codes).each do |value|
             values << startwith + value
@@ -2021,32 +2020,6 @@ module Bibframe
           else BF.uri
           end
         @graph << [subject, property, RDF::URI.new(value)]
-      end
-    end
-
-    # 指定したTag， サブフィールドコード、文字列、リソース種別からトリプルを作成する
-    # @param [String] tag 対象となるフィールドのタグ
-    # @param [String] sfcode 対象となるサブフィールドコード
-    # @param [String] text オブジェクトに関係する文字列
-    # @param [domain] 対象となるリソース種別
-    # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
-    def generate_property_from_text(tag, sfcode, text, domain, subject)
-      return unless SIMPLE_PROPERTIES[domain] && SIMPLE_PROPERTIES[domain][tag]
-      SIMPLE_PROPERTIES[domain][tag].each do |h|
-        next unless h[:sfcodes].include?(sfcode) || h[:sfcodes] == ''
-        startwith = h[:startwith] ? h[:startwith] : ''
-        object =
-          if h[:uri] == nil
-            startwith + text
-          elsif h[:uri].include?('loc.gov/vocabulary/organizations')
-            text = normalize_space(text).downcase.gsub(/-/, '')
-            RDF::URI.new(h[:uri]+text)
-          elsif h[:property].include?('lccn')
-            RDF::URI.new(h[:uri]+text.gsub(/ /, ''))
-          else
-            RDF::URI.new(h[:uri]+text)
-          end
-        @graph << [subject, BF[h[:property]], object]
       end
     end
 
