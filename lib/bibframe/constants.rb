@@ -412,7 +412,7 @@ module Bibframe
     'event' => {
       '518' => {property: 'eventDate', sfcodes: 'd'},
     },
-    'findingAid' => {
+    'findingaid' => {
       '555' => {property: 'findingAidNote', sfcodes: '3abc'},
     },
     'helditem' => {

@@ -431,7 +431,7 @@ module Bibframe
     def generate_abstract(field, subject)
       if field['c'] || field['u']
         generate_abstract_annotation_graph(field, subject)
-      else　# 実際は対象なし
+      else
         generate_simple_property(field, 'work', subject)
       end
     end
@@ -440,6 +440,8 @@ module Bibframe
     # @param [MARC::Datafield] field 処理対象フィールド (008)
     # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
     def generate_audience(field, subject)
+      return unless MARC::ControlField.control_tag?(field.tag)
+
       audience = field.value[22]
       type008 = get_type_of_008
       if audience != ' ' && %w(BK CF MU VM).include?(type008) && TARGET_AUDIENCES[audience]
@@ -987,7 +989,7 @@ module Bibframe
       @graph << [bn_findaid, RDF.type, BF.Work]
       @graph << [bn_findaid, BF.authorizedAccessPoint, field['a']]
       @graph << [bn_findaid, BF.title, field['a']]
-      if field['d']
+      if field['u']
         bn_instance = RDF::Node.uuid
         @graph << [bn_findaid, BF.hasInstance, bn_instance]
         @graph << [bn_instance, RDF.type, BF.Instance]
@@ -2012,14 +2014,13 @@ module Bibframe
     end
 
     def handle_856u(field, subject)
-      field.each do |sbfield|
-        next unless sbfield.code == 'u'
-        property = case sbfield.value
+      field.values_of('u').each do |value|
+        property = case value
           when /doi/ then BF.doi
           when /hdl/ then BF.hdl
           else BF.uri
           end
-        @graph << [subject, property, RDF::URI.new(sbfield.value)]
+        @graph << [subject, property, RDF::URI.new(value)]
       end
     end
 
