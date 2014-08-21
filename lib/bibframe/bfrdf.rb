@@ -1780,7 +1780,7 @@ module Bibframe
         end
       places = field.values_of('b')
       agents = field.values_of('c')
-      pdate  = field['d'] ? chop_puctuation(field['d']) : nil
+      pdate  = field['d'] ? chop_puctuation(field['d'], '.') : nil
       extent = field['e']
       coverage = field['m']
       notes  = field.values_of('n')
