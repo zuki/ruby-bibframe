@@ -1716,8 +1716,8 @@ module Bibframe
 
     # リソース間の関係に関連するトリプルを作成する
     #   generate_related_worksの下請けメソッドで実際のトリプル作成はこのメソッドで行う
-    # @param [MARC::Datafield] field 処理対象フィールド (243|245|247)
-    # @param [String] domain 処理対象のリソース種別
+    # @param [MARC::Datafield] field 処理対象フィールド (400|410|411|430|440|490|533|534|630|700|710|711|720|730|740|760|762|765|767|770|772|773|774|775|776|777|780|785|786|787|800|810|811|830)
+    # @param [String] property 処理対象のリソース種別
     # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
     def generate_related_works_graph(field, property, subject)
       return unless property
@@ -1732,7 +1732,7 @@ module Bibframe
       bn_work = RDF::Node.uuid
       if field['a'] && field.tag = '740' and field.indicator2 == '2' &&
         @record.fields(%w(100 110 111)).size > 0
-        heading = @reocrd.fields(%w(100 110 111))[0]
+        heading = @record.fields(%w(100 110 111))[0]
         generate_names(heading, bn_work)
         alabel = get_label(field)
       elsif !(%w(400 410 411 440 490 80 810 811 510 630 730 740 830).include?(field.tag)) && field['a']
