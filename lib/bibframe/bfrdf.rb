@@ -615,8 +615,6 @@ module Bibframe
     # @param [RDF::Resource] subject このメソッドのトップレベルで作成されるトリプルの主語
     def generate_complex_notes(field, subject)
       return unless field.indicator2 == '0'
-      codes = field.codes(false)
-      codes.delete('t')
       notes =[]
       note = {}
       field.subfields.each do |sb|
