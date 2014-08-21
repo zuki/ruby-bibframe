@@ -736,12 +736,11 @@ module Bibframe
       require 'date'
       require 'iso-639'
 
-      lccn = get_lccn
       bn_anno = RDF::Node.uuid
       @graph << [subject, BF.hasAnnotation, bn_anno]
       @graph << [bn_anno, RDF.type, BF.Annotation]
-      @graph << [bn_anno, BF.derivedFrom, RDF::URI.new("http://lccn.loc.gov/#{lccn}")] if lccn
-      @graph << [bn_anno, BF.generationProcess, "Ruby-rdf: "+DateTime.now.iso8601]
+      @graph << [bn_anno, BF.derivedFrom, subject]
+      @graph << [bn_anno, BF.generationProcess, "ruby-bibframe: "+DateTime.now.iso8601]
       if @record['005']
         dt = clean_string(@record['005'].value)
         #edited = "%04d-%02d-%02dT%02d:%02d:%02d" % [dt[0,4], dt[4,2], dt[6,2], dt[8,2], dt[10,2], dt[12,2]]
