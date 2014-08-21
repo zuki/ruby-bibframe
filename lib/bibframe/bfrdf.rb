@@ -1693,7 +1693,7 @@ module Bibframe
           @graph << [bn_annotation, BF.copyNote, value]
         end
         if workid != 'person' && category == 'annotation'
-          @graph << [bn_annotation, BF.annotates, RDF::URI.new(workid)]
+          @graph << [bn_annotation, BF.annotates, subject]
         end
       end
     end
